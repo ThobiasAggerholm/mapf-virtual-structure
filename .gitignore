@@ -34,3 +34,9 @@
 # Benchmark data on all maps and random scenarios from https://movingai.com/benchmarks/mapf/index.html
 *.map
 *.scen
+
+# Ignore vscode settings
+/.vscode/
+
+#Ignore cmake build files
+/build/
