@@ -32,5 +32,5 @@
 *.app
 
 # Benchmark data on all maps and random scenarios from https://movingai.com/benchmarks/mapf/index.html
-./benchmark_data/mapf-map 
-./benchmark_data/mapf-scen-random
+*.map
+*.scen
