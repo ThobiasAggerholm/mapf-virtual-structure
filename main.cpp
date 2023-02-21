@@ -70,17 +70,17 @@ int main(int argc, char** argv)
     std::string map_fname_out = "../output_data/mapf-map/Berlin_1_256_map.png"; // For debugging
 
     std::string agent_fname = "../benchmark_data/mapf-scen-random/Berlin_1_256-random-1.scen"; // For debugging
-    int num_agents = 2; // For debugging
+    int num_agents = 1; // For debugging
 
     Instance instance(map_fname_in, agent_fname, num_agents);
 
     AS_Params as_params;
     as_params.graph = &instance.m_my_graph;
     as_params.n_vertices = instance.m_map_size;
-    as_params.n_ants = 20;
-    as_params.alpha = 0;
-    as_params.beta = 0;
-    as_params.init_pheromone = 0.1;
+    as_params.n_ants = 200;
+    as_params.alpha = 100;
+    as_params.beta = 0.5;
+    as_params.init_pheromone = 0.001;
     as_params.evaporation_rate = 0.05;
 
     ACO aco(instance, num_agents, as_params);

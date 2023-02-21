@@ -146,6 +146,7 @@ bool ACO::take_step()
         std::for_each(std::execution::par, std::begin(as.m_ant_indices), std::end(as.m_ant_indices), [this, &as, &mtx_ant, &is_as_goal_reached, i](int & i_ant)
         {
             Ant & ant = as.m_ants[i_ant];
+            int start = m_instance.m_start_locations[i];
             int goal = m_instance.m_goal_locations[i];
             if(!ant.m_found_gold)
             {
@@ -157,7 +158,18 @@ bool ACO::take_step()
                 for(auto i_neighbor : neighbors)
                     neighbors_nodes.push_back(&m_instance.m_my_graph[i_neighbor]);
 
-                Node const* next_node = as.decision_rule(i_ant, curr_node, neighbors_nodes);
+                std::vector<double> heuristics(neighbors.size());
+                double manhatten_start_goal = m_instance.get_manhattan_distance(start,goal);
+                for(int i_neighbor = 0; i_neighbor < neighbors.size(); ++i_neighbor)
+                {
+                    double manhatten_curr_goal = m_instance.get_manhattan_distance(curr_node->vertex_id, neighbors[i_neighbor]);
+                    double heuristic = 1 - (manhatten_curr_goal/manhatten_start_goal);
+                    heuristic = (heuristic < 0) ? 0 : heuristic;
+
+                    heuristics[i_neighbor] = heuristic;
+                }
+                
+                Node const* next_node = as.decision_rule(i_ant, curr_node, neighbors_nodes, &heuristics);
 
                 //If vertex is free
                     //If edge is free
@@ -226,6 +238,9 @@ void ACO::log_best_solutions()
         int i_best_ant = 0;
         for(int i_ant = 0; i_ant < as.m_ants.size(); ++i_ant)
         {
+            if(!as.m_ants[i_ant].m_found_gold)
+                continue;
+                
             if(as.m_ants[i_ant].m_tour_length < new_best_score)
                 new_best_score = as.m_ants[i_ant].m_tour_length;
         }

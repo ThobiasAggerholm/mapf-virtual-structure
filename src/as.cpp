@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <execution>
+#include <cmath>
 
 bool Ant::move(Node const* next, double cost)
 {
@@ -114,7 +115,7 @@ AS::AS(const std::vector<Node> & graph, int n_vertices, int n_ants, double alpha
     compute_choice_information();
 }
 
-Node const* AS::decision_rule(int k_ant, Node const* curr, const std::vector<Node const*> & neighbors)
+Node const* AS::decision_rule(int k_ant, Node const* curr, const std::vector<Node const*> & neighbors, std::vector<double> const* heuristics)
 {
     double sum_probs = 0;
     std::vector<double> selection_props(neighbors.size());
@@ -128,7 +129,11 @@ Node const* AS::decision_rule(int k_ant, Node const* curr, const std::vector<Nod
             selection_props[i_neighbor] = 0;
         else
         {
-            selection_props[i_neighbor] = m_choice_info[curr][neighbor];
+            selection_props[i_neighbor] = std::pow(m_choice_info[curr][neighbor], m_alpha);
+
+            if(heuristics != nullptr)
+                selection_props[i_neighbor] += std::pow((*heuristics)[i_neighbor], m_beta);
+
             sum_probs += selection_props[i_neighbor];
         }
         ++i_neighbor;

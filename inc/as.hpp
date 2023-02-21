@@ -31,8 +31,8 @@ struct AS_Params
     std::vector<Node> const* graph = nullptr;
     int n_vertices = 0;
     int n_ants = 0;
-    double alpha = 0;
-    double beta = 0;
+    double alpha = 1;
+    double beta = 1;
     
     double evaporation_rate = 0;
     double init_pheromone = 0;
@@ -46,7 +46,7 @@ class AS
         AS(const std::vector<Node> & graph, int n_vertices, int n_ants, double alpha, double beta,
          double evaporation_rate, double init_pheromone, EdgeMap * init_choice_info = nullptr);
 
-        Node const* decision_rule(int k_ant, Node const* curr, const std::vector<Node const*> & neighbors);
+        Node const* decision_rule(int k_ant, Node const* curr, const std::vector<Node const*> & neighbors, std::vector<double> const* heuristics = nullptr);
         int choose_best_next(int k_ant, Node const* curr, const std::vector<Node const*> & neighbors);
         void pheromone_update();
         void compute_choice_information();
