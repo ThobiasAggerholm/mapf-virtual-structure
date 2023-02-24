@@ -106,7 +106,7 @@ bool Instance::load_agents()
             getline(ss, token, sep);// skip the first number// skip the map name// skip the columns// skip the rows
 
         getline(ss, token, sep);
-        // read start [row,col] for agent i
+        // read start [x,y] for agent i
         int col = stoi(token);
         getline(ss, token, sep);
         int row = stoi(token);
@@ -150,13 +150,23 @@ bool Instance::load_graph()
     return true;
 }
 
-bool Instance::valid_move(int next) const
+bool Instance::valid_pos(int pos) const
+{
+	if (pos < 0 || pos >= m_map_size)
+		return false;
+	if (m_my_map[pos])
+		return false;
+    return true;
+}
+
+
+bool Instance::valid_move(int curr, int next) const
 {
 	if (next < 0 || next >= m_map_size)
 		return false;
 	if (m_my_map[next])
 		return false;
-	return true;
+	return get_manhattan_distance(curr, next) < 2;
 }
 
 std::vector<int> Instance::get_neighbors(int curr) const
@@ -165,7 +175,7 @@ std::vector<int> Instance::get_neighbors(int curr) const
 	std::vector<int> candidates = {curr + 1, curr - 1, curr + m_num_of_cols, curr - m_num_of_cols};
 	for(int next : candidates)
 	{
-		if (valid_move(next))
+		if (valid_move(curr, next))
 			neighbors.emplace_back(next);
 	}
 	return neighbors;
@@ -222,7 +232,7 @@ bool Instance::map_route_to_image(std::string out_fname, const std::vector<int> 
                     color[1] = 0;
                     color[2] = 255;
                 }
-                else if((*set_path.find(pos)) == path.back())
+                else if((*set_path.find(pos)) == path[path.size()-2])
                 {
                     cv::Vec3b & color = img.at<cv::Vec3b>(i,j);
                     color[0] = 0;

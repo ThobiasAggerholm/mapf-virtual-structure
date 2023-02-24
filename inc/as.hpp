@@ -46,8 +46,8 @@ class AS
         AS(const std::vector<Node> & graph, int n_vertices, int n_ants, double alpha, double beta,
          double evaporation_rate, double init_pheromone, EdgeMap * init_choice_info = nullptr);
 
-        Node const* decision_rule(int k_ant, Node const* curr, const std::vector<Node const*> & neighbors, std::vector<double> const* heuristics = nullptr);
-        int choose_best_next(int k_ant, Node const* curr, const std::vector<Node const*> & neighbors);
+        Node const* decision_rule(int k_ant, Node const* curr, const std::vector<Node const*> & neighbors, std::vector<double> const* heuristics = nullptr, std::vector<double> const* sp = nullptr);
+        int choose_random_next(int k_ant, Node const* curr, const std::vector<Node const*> & neighbors);
         void pheromone_update();
         void compute_choice_information();
         void evaporate();
@@ -65,6 +65,7 @@ class AS
 
         // TODO use of values?
         double m_alpha, m_beta;
+        
 
     private:
 

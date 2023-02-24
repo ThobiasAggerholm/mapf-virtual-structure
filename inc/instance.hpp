@@ -21,25 +21,26 @@ class Instance
 		inline int get_col_coordinate(int id) const { return id % this->m_num_of_cols; }
 		inline std::pair<int, int> get_coordinate(int id) const { return std::make_pair(id / this->m_num_of_cols, id % this->m_num_of_cols); }
 
+        
 		inline int get_manhattan_distance(int loc1, int loc2) const
 		{
-			int loc1_x = get_row_coordinate(loc1);
-			int loc1_y = get_col_coordinate(loc1);
-			int loc2_x = get_row_coordinate(loc2);
-			int loc2_y = get_col_coordinate(loc2);
+			int loc1_y = get_row_coordinate(loc1);
+			int loc1_x = get_col_coordinate(loc1);
+			int loc2_y = get_row_coordinate(loc2);
+			int loc2_x = get_col_coordinate(loc2);
 			return abs(loc1_x - loc2_x) + abs(loc1_y - loc2_y);
 		}
         inline double get_neighbor_distance(int curr, int nb) const
         {
             assert(get_manhattan_distance(curr, nb) == 1);
-            assert(valid_move(curr));
-            assert(valid_move(nb));
+            assert(valid_move(curr, nb));
             Node const* p_nb = &m_my_graph[nb];
 
             return m_my_graph[curr].edges.at(p_nb);
         }
 
-        bool valid_move(int next) const;
+        bool valid_pos(int pos) const;
+        bool valid_move(int curr,int next) const;
         inline bool isObstacle(int loc) const { return m_my_map[loc]; }
 
         std::vector<int> get_neighbors(int curr) const;

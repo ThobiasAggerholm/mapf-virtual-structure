@@ -30,7 +30,6 @@ int Ant::return_home()
 {
     m_tour.push_back(m_tour[0]);
     m_is_returned_home = true;
-    m_tour_length *= 2;
     return m_tour_length;
 }
 
@@ -107,6 +106,9 @@ AS::AS(const std::vector<Node> & graph, int n_vertices, int n_ants, double alpha
             edges.reserve(node->edges.size());
             for(auto cit = node->edges.cbegin(); cit != node->edges.cend(); ++cit)
                 edges[cit->first] = cit->second;
+            // for(auto cit = node->edges.cbegin(); cit != node->edges.cend(); ++cit)
+            //      edges[cit->first] = 0;
+            
             
             m_init_choice_info[node] = std::move(edges);
         }
@@ -115,7 +117,7 @@ AS::AS(const std::vector<Node> & graph, int n_vertices, int n_ants, double alpha
     compute_choice_information();
 }
 
-Node const* AS::decision_rule(int k_ant, Node const* curr, const std::vector<Node const*> & neighbors, std::vector<double> const* heuristics)
+Node const* AS::decision_rule(int k_ant, Node const* curr, const std::vector<Node const*> & neighbors, std::vector<double> const* heuristics, std::vector<double> const* sp)
 {
     double sum_probs = 0;
     std::vector<double> selection_props(neighbors.size());
@@ -129,10 +131,8 @@ Node const* AS::decision_rule(int k_ant, Node const* curr, const std::vector<Nod
             selection_props[i_neighbor] = 0;
         else
         {
-            selection_props[i_neighbor] = std::pow(m_choice_info[curr][neighbor], m_alpha);
-
-            if(heuristics != nullptr)
-                selection_props[i_neighbor] += std::pow((*heuristics)[i_neighbor], m_beta);
+            double sp_ij = (sp != nullptr) ? (*sp)[i_neighbor] : 1;
+            selection_props[i_neighbor] = m_choice_info[curr][neighbor] * sp_ij;
 
             sum_probs += selection_props[i_neighbor];
         }
@@ -141,7 +141,7 @@ Node const* AS::decision_rule(int k_ant, Node const* curr, const std::vector<Nod
     
     int j = 0;
     if(sum_probs == 0)
-        j = choose_best_next(k_ant, curr, neighbors);
+        j = choose_random_next(k_ant, curr, neighbors);
     else
     {
         srand(time(NULL));
@@ -158,26 +158,16 @@ Node const* AS::decision_rule(int k_ant, Node const* curr, const std::vector<Nod
     return neighbors[j];
 }
 
-int AS::choose_best_next(int k_ant, Node const* curr, const std::vector<Node const*> & neighbors)
+int AS::choose_random_next(int k_ant, Node const* curr, const std::vector<Node const*> & neighbors)
 {
-    Ant & ant = m_ants[k_ant];
-    double v = 0;
-    int nn = 0; // Next neighbor
-    int i_neighbor = 0;
-    for(auto neighbor : neighbors)
-    {
-        if(ant.m_visited.find(neighbor) == ant.m_visited.end())
-        {
-            if(m_choice_info[curr][neighbor] > v)
-            {
-                nn = i_neighbor;
-                v = m_choice_info[curr][neighbor];
-            }
-        }
-
-        ++i_neighbor;
-    }
-
+    // std::cout << "----" << std::endl;
+    // std::cout << curr->vertex_id % 9 << ", " << int(curr->vertex_id / 9) << std::endl;
+    // for(int i = 0; i < neighbors.size(); ++i)
+    //     std::cout << "n: " << neighbors[i]->vertex_id % 9 << ", " << int(neighbors[i]->vertex_id / 9) << std::endl;
+    std::random_device rd; // obtain a random number from hardware
+    std::mt19937 gen(rd()); // seed the generator
+    std::uniform_int_distribution<> distr(0, neighbors.size()-1); // define the range
+    int nn = distr(gen);
     return nn;
 }
 
@@ -197,7 +187,7 @@ void AS::compute_choice_information()
     {
         for(auto cit = m_init_choice_info[it.first].cbegin(); cit != m_init_choice_info[it.first].cend(); ++cit)
         {
-            m_choice_info[it.first][cit->first] =  m_init_choice_info[it.first][cit->first] + m_pheromones[it.first][cit->first];
+            m_choice_info[it.first][cit->first] =  std::pow(m_init_choice_info[it.first][cit->first],m_beta) * std::pow(m_pheromones[it.first][cit->first], m_alpha);
         }
     });
 }

@@ -5,9 +5,53 @@
 #include <execution>
 #include <limits>
 #include <iostream>
+#include <opencv2/opencv.hpp>
+
+void log_pheromones(std::vector<double> & map, EdgeMap & pheromones)
+{
+    for(auto it_vertex = pheromones.begin(); it_vertex != pheromones.end(); ++it_vertex)
+    {
+        for(auto it_edge = it_vertex->second.begin();  it_edge != it_vertex->second.end(); ++it_edge)
+        {
+            map.at(it_edge->first->vertex_id) += it_edge->second;
+        }
+    }
+}
+
+bool save_to_pheromones_img(std::string f_name, int n_cols, int n_rows, const std::vector<double> & pheromones_map)
+{
+        // Determine the width and height of the ASCII art
+    int width = n_cols;
+    int height = n_rows;
+
+    // Create a black image with the specified width and height
+    cv::Mat img(height, width, CV_8UC3, cv::Scalar(0, 0, 0));
+
+	for (int i = 0; i < height; i++)
+	{
+		for (int j = 0; j < width; j++)
+		{
+            int pos = width * i + j;
+
+            int red_color = pheromones_map[pos] * 255;
+            if(255 < red_color)
+            {
+                std::cout << "Color out of rannge " << red_color << std::endl;
+                red_color = 255;
+            }
+
+            cv::Vec3b & color = img.at<cv::Vec3b>(i,j);
+            color[0] = 0;
+            color[1] = 0;
+            color[2] = red_color;
+        }
+    }
+	// Save the image
+    return cv::imwrite(f_name, img);
+}
 
 ACO::ACO(const Instance & instance, int n_ant_systems, const AS_Params & ap)
- : m_instance{instance}
+ : m_instance{instance}, m_a_star(instance)
 {
     assert(ap.graph != nullptr);
     m_ant_systems.reserve(n_ant_systems);
@@ -52,25 +96,59 @@ ACO::ACO(const Instance & instance, int n_ant_systems, const AS_Params & ap)
 
 void ACO::run(int IT_NI, int IT_MAX)
 {
+    // std::vector< std::vector < double > > pheromone_maps;
+    // pheromone_maps.push_back(std::vector<double>(m_instance.m_map_size, 0));
+    // log_pheromones(pheromone_maps.back(), m_ant_systems[0].m_pheromones);
+
     int it_ni = 0;
     int it = 0;
-    double last_best_score = std::numeric_limits<double>::max();
+    std::vector<double> last_best_scores(m_ant_systems.size(), std::numeric_limits<double>::max());
     while((it_ni <= IT_NI) && (it < IT_MAX))
     {
         ++it;
         ++it_ni;
         construct_solutions();
         update_pheromones();
+
+        // if((it % 50) == 0)
+        // {
+        //     pheromone_maps.push_back(std::vector<double>(m_instance.m_map_size, 0));
+        //     log_pheromones(pheromone_maps.back(), m_ant_systems[0].m_pheromones);
+        // }
+
         log_best_solutions();
-        double it_best_score = *std::min_element(m_as_scores.begin(), m_as_scores.end());
-        if(it_best_score < last_best_score)
-        {
-            std::cout << "New best score: " << it_best_score << " - COmpared to last best score: " << last_best_score << std::endl;
-            last_best_score = it_best_score;
-            it_ni = 0;
-        }
-        std::cout << "Iteration: "<<  it << std::endl;
+        std::for_each(std::execution::par, std::begin(m_active_as_indices), std::end(m_active_as_indices), [this, &last_best_scores, &it_ni](int i_as){
+            if(m_as_scores[i_as] < last_best_scores[i_as])
+            {
+                std::cout << "New best score, as " << i_as << ": " << m_as_scores[i_as] << " - Compared to last best score: " << last_best_scores[i_as] << std::endl;
+                last_best_scores[i_as] = m_as_scores[i_as];
+                it_ni = 0;
+            }
+        });
+        if((it % (IT_MAX/10)) == 0)
+            std::cout << "Iteration: "<<  it << std::endl;
     }
+
+    // double highest_pheromone_val = 0;
+    // for(int i = 0; i < pheromone_maps.size(); ++i)
+    // {
+    //     for(int j = 0; j < pheromone_maps[i].size(); ++j)
+    //     {
+    //         if(highest_pheromone_val < pheromone_maps[i][j])
+    //             highest_pheromone_val = pheromone_maps[i][j];
+    //     }
+    // }
+    // for(int i = 0; i < pheromone_maps.size(); ++i)
+    // {
+    //     for(int j = 0; j < pheromone_maps[i].size(); ++j)
+    //     {
+    //         pheromone_maps[i][j] = pheromone_maps[i][j] / highest_pheromone_val;
+    //     }
+    //     std::string fname = "../output_data/pheromone_maps/p_map_" + std::to_string(i) + ".png";
+    //     save_to_pheromones_img(fname, m_instance.m_num_of_cols, m_instance.m_num_of_rows, pheromone_maps[i]);
+
+    // }
+
 }
 
 
@@ -99,7 +177,7 @@ void ACO::construct_solutions()
     });
 
     //Search
-    int n_max_steps = 1000;
+    int n_max_steps = 500;
     int n_steps = 0;
     bool are_goals_reached = false;
     while((n_steps < n_max_steps) && !are_goals_reached)
@@ -113,7 +191,24 @@ void ACO::construct_solutions()
     std::for_each(std::execution::par, std::begin(m_active_as_indices), std::end(m_active_as_indices), [this](int  i)
     {
         AS & as = m_ant_systems[i];
-        std::for_each(std::execution::par, std::begin(as.m_ant_indices), std::end(as.m_ant_indices), [&as](int i_ant){
+        std::for_each(std::execution::par, std::begin(as.m_ant_indices), std::end(as.m_ant_indices), [this, &as, &i](int i_ant)
+        {
+            //Compute A* path for each ant position to goal with no regard for collisions
+            // std::vector<Cell> cell_details;
+            // bool path_found = m_a_star.search(cell_details, as.m_ants[i_ant].m_tour.back()->vertex_id, m_i_goals[i]);
+            // if(path_found)
+            // {
+            //     std::vector<int> path = m_a_star.trace_path(cell_details, m_i_goals[i]);
+            //     assert(path.front() == m_i_goals[i]);
+            //     for(int i_path = path.size()-2; i_path >= 0; --i_path)
+            //     {
+            //         Node const* curr = as.m_ants[i_ant].m_tour.back();
+            //         Node const* next = &m_instance.m_my_graph[path[i_path]];
+            //         double transition_cost = m_instance.m_my_graph.at(curr->vertex_id).edges.at(next);
+            //         as.m_ants[i_ant].move(next, transition_cost);
+            //     }
+            //     as.m_ants[i_ant].m_found_gold = true;
+            // }
             as.m_ants[i_ant].return_home();
         });
 
@@ -122,6 +217,13 @@ void ACO::construct_solutions()
     //Clean up vertex mutexes
     std::for_each(std::execution::par, std::begin(m_vertex_locks), std::end(m_vertex_locks),  [](auto &it){
         it.second.unlock();
+    });
+
+    //Clean up occupation
+    std::for_each(std::execution::par, std::begin(m_node_occupation), std::end(m_node_occupation),  [](auto &it)
+    {
+        it.second.first = -1;
+        it.second.second = 0;
     });
 }
 
@@ -138,6 +240,8 @@ bool ACO::take_step()
 {
     std::mutex mtx;
     bool are_goals_reached = true;
+    // Request move
+    
     std::for_each(std::execution::par, std::begin(m_active_as_indices), std::end(m_active_as_indices), [this, &mtx, &are_goals_reached](int & i)
     {
         AS & as = m_ant_systems[i];
@@ -148,6 +252,7 @@ bool ACO::take_step()
             Ant & ant = as.m_ants[i_ant];
             int start = m_instance.m_start_locations[i];
             int goal = m_instance.m_goal_locations[i];
+
             if(!ant.m_found_gold)
             {
                 Node const* curr_node =ant.m_tour.back();
@@ -158,24 +263,16 @@ bool ACO::take_step()
                 for(auto i_neighbor : neighbors)
                     neighbors_nodes.push_back(&m_instance.m_my_graph[i_neighbor]);
 
-                std::vector<double> heuristics(neighbors.size());
-                double manhatten_start_goal = m_instance.get_manhattan_distance(start,goal);
-                for(int i_neighbor = 0; i_neighbor < neighbors.size(); ++i_neighbor)
-                {
-                    double manhatten_curr_goal = m_instance.get_manhattan_distance(curr_node->vertex_id, neighbors[i_neighbor]);
-                    double heuristic = 1 - (manhatten_curr_goal/manhatten_start_goal);
-                    heuristic = (heuristic < 0) ? 0 : heuristic;
-
-                    heuristics[i_neighbor] = heuristic;
-                }
+                // // N obstacles around J
+                // std::vector<double> stimulated_probability(neighbors.size());
+                // for(int i_neighbor = 0; i_neighbor < neighbors.size(); ++i_neighbor)
+                // {
+                //     int n_obs = 4 - m_instance.get_neighbors(neighbors[i_neighbor]).size();
+                //     stimulated_probability[i_neighbor] = double(get_combinations(4 - n_obs - 1, 1))/double(get_combinations(4, n_obs));
+                // }
                 
-                Node const* next_node = as.decision_rule(i_ant, curr_node, neighbors_nodes, &heuristics);
-
-                //If vertex is free
-                    //If edge is free
-                        //Move
-                //Else 
-                    //Wait
+                //Node const* next_node = as.decision_rule(i_ant, curr_node, neighbors_nodes, &heuristics, &stimulated_probability);
+                Node const* next_node = as.decision_rule(i_ant, curr_node, neighbors_nodes);
 
                 //Check if move is possible
                 bool is_moved = false;
@@ -218,14 +315,7 @@ bool ACO::take_step()
         mtx.unlock();
     });
 
-    //Clean up edge mutexes
-    // std::for_each(std::execution::par, m_edge_locks.begin(), m_edge_locks.end(), [](auto & edges)
-    // {
-    //     for(auto it_dst = edges.second.begin(); it_dst != edges.second.end();  ++it_dst)
-    //     {
-    //         it_dst->second.unlock();
-    //     }
-    // });
+    // Resolve moves
     return are_goals_reached;
 }
 
@@ -240,7 +330,7 @@ void ACO::log_best_solutions()
         {
             if(!as.m_ants[i_ant].m_found_gold)
                 continue;
-                
+
             if(as.m_ants[i_ant].m_tour_length < new_best_score)
                 new_best_score = as.m_ants[i_ant].m_tour_length;
         }

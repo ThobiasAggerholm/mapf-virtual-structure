@@ -16,13 +16,13 @@ AStar::AStar(const Instance & instance)
 bool AStar::search(std::vector<Cell> & cell_details, const int & src, const int & goal)
 {
 	// If the source is out of range
-    if( m_instance.valid_move(src) == false )
+    if( m_instance.valid_pos(src) == false )
     {
         return false;
     }
 
 	// If the destination is out of range
-    if( m_instance.valid_move(goal) == false )
+    if( m_instance.valid_pos(goal) == false )
     {
         return false;
     }
