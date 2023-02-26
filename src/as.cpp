@@ -6,6 +6,98 @@
 #include <execution>
 #include <cmath>
 
+EdgeMap::EdgeMap()
+{
+
+}
+
+EdgeMap::EdgeMap(EdgeMap &src)
+ : m_edge_map{std::move(src.m_edge_map)}
+{
+    for(auto cit = m_edge_map.cbegin(); cit != m_edge_map.cend(); ++cit)
+    {
+        for(auto cit_inner = cit->second.cbegin(); cit_inner != cit->second.cend(); ++cit_inner)
+        {
+            m_mutex_map[cit->first][cit_inner->first];
+        }
+    }
+}
+
+EdgeMap::EdgeMap(const EdgeMap &src)
+ : m_edge_map{src.m_edge_map}
+{
+    for(auto cit = m_edge_map.cbegin(); cit != m_edge_map.cend(); ++cit)
+    {
+        for(auto cit_inner = cit->second.cbegin(); cit_inner != cit->second.cend(); ++cit_inner)
+        {
+            m_mutex_map[cit->first][cit_inner->first];
+        }
+    }
+}
+
+EdgeMap::~EdgeMap()
+{
+
+}
+
+EdgeMap& EdgeMap::operator=(EdgeMap &rhs)
+{
+    m_edge_map = std::move(rhs.m_edge_map);
+    for(auto cit = m_edge_map.cbegin(); cit != m_edge_map.cend(); ++cit)
+    {
+        for(auto cit_inner = cit->second.cbegin(); cit_inner != cit->second.cend(); ++cit_inner)
+        {
+            m_mutex_map[cit->first][cit_inner->first];
+        }
+    }
+    return *this;
+}
+
+EdgeMap& EdgeMap::operator=(const EdgeMap &rhs)
+{
+    m_edge_map = rhs.m_edge_map;
+    for(auto cit = m_edge_map.cbegin(); cit != m_edge_map.cend(); ++cit)
+    {
+        for(auto cit_inner = cit->second.cbegin(); cit_inner != cit->second.cend(); ++cit_inner)
+        {
+            m_mutex_map[cit->first][cit_inner->first];
+        }
+    }
+
+    return *this;
+}
+
+double EdgeMap::read(Node const* src, Node const* dst)
+{
+    double val;
+    m_mutex_map.at(src).at(dst).lock();
+    val = m_edge_map.at(src).at(dst);
+    m_mutex_map.at(src).at(dst).unlock();
+
+    return val;
+}
+
+void  EdgeMap::write(Node const* src, Node const* dst, double val)
+{
+    if(m_edge_map.find(src) == m_edge_map.end())
+    {
+        m_edge_map[src][dst];
+        m_mutex_map[src][dst];
+    }
+    else if(m_edge_map[src].find(dst) == m_edge_map[src].end())
+    {
+        m_edge_map[src][dst];
+        m_mutex_map[src][dst];
+    }
+
+    m_mutex_map.at(src).at(dst).lock();
+    m_edge_map[src][dst] = val;
+    m_mutex_map.at(src).at(dst).unlock();
+
+    return;
+}
+
+
 bool Ant::move(Node const* next, double cost)
 {
     bool not_visited = true;
@@ -61,34 +153,22 @@ void Ant::deposit_pheromone(EdgeMap & pheromone_map)
         Node const* dst = m_tour[i]; 
         if(src == dst)
             continue; // Wait move
-        pheromone_map.at(src).at(dst) += deposit;
+        pheromone_map.write(src, dst, pheromone_map.read(src,dst) + deposit);
+        pheromone_map.write(dst, src, pheromone_map.read(dst, src) - deposit);
     }
 }
 
 
 AS::AS(const std::vector<Node> & graph, int n_vertices, int n_ants, double alpha, double beta,
-         double evaporation_rate, double init_pheromone, EdgeMap * init_choice_info)
-: m_alpha{alpha}, m_beta{beta}, m_evaporation_rate{evaporation_rate}, m_init_pheromone{init_pheromone}, m_ants(n_ants)
+         double evaporation_rate, double init_pheromone, double max_pheromone, EdgeMap & pheromone_map, EdgeMap * init_choice_info)
+: m_alpha{alpha}, m_beta{beta}, m_evaporation_rate{evaporation_rate}, m_init_pheromone{init_pheromone},
+    m_max_pheromone{max_pheromone}, m_ants(n_ants), m_pheromones{pheromone_map}
 {
     m_dim_indices.resize(n_vertices);
     std::iota(m_dim_indices.begin(), m_dim_indices.end(), 0);
 
     m_ant_indices.resize(m_ants.size());
     std::iota(m_ant_indices.begin(), m_ant_indices.end(), 0);
-    
-    // Build pheromone map from graph
-    for(int i = 0; i < graph.size(); ++i)
-    {
-        Node const* node = &graph[i];
-
-
-        std::unordered_map<Node const*, double> edges;
-        edges.reserve(node->edges.size());
-        for(auto cit = node->edges.cbegin(); cit != node->edges.cend(); ++cit)
-            edges[cit->first] = init_pheromone;
-        
-        m_pheromones[node] = std::move(edges);
-    }
 
     if(init_choice_info != nullptr)
     {
@@ -100,17 +180,8 @@ AS::AS(const std::vector<Node> & graph, int n_vertices, int n_ants, double alpha
         for(int i = 0; i < graph.size(); ++i)
         {
             Node const* node = &graph[i];
-
-
-            std::unordered_map<Node const*, double> edges;
-            edges.reserve(node->edges.size());
             for(auto cit = node->edges.cbegin(); cit != node->edges.cend(); ++cit)
-                edges[cit->first] = cit->second;
-            // for(auto cit = node->edges.cbegin(); cit != node->edges.cend(); ++cit)
-            //      edges[cit->first] = 0;
-            
-            
-            m_init_choice_info[node] = std::move(edges);
+                m_init_choice_info.write(node, cit->first, cit->second);
         }
     }
 
@@ -132,7 +203,7 @@ Node const* AS::decision_rule(int k_ant, Node const* curr, const std::vector<Nod
         else
         {
             double sp_ij = (sp != nullptr) ? (*sp)[i_neighbor] : 1;
-            selection_props[i_neighbor] = m_choice_info[curr][neighbor] * sp_ij;
+            selection_props[i_neighbor] = m_choice_info.read(curr, neighbor) * sp_ij;
 
             sum_probs += selection_props[i_neighbor];
         }
@@ -141,7 +212,9 @@ Node const* AS::decision_rule(int k_ant, Node const* curr, const std::vector<Nod
     
     int j = 0;
     if(sum_probs == 0)
+    {
         j = choose_random_next(k_ant, curr, neighbors);
+    }
     else
     {
         srand(time(NULL));
@@ -154,7 +227,6 @@ Node const* AS::decision_rule(int k_ant, Node const* curr, const std::vector<Nod
             p += selection_props[j];
         }
     }
-
     return neighbors[j];
 }
 
@@ -173,35 +245,27 @@ int AS::choose_random_next(int k_ant, Node const* curr, const std::vector<Node c
 
 void AS::pheromone_update()
 {
-    evaporate();
     for(Ant & ant : m_ants)
     {
-        ant.deposit_pheromone(m_pheromones); // Before multi threading mutex is needed to avoid data race
+        ant.deposit_pheromone(m_pheromones);
     }
-    compute_choice_information();
 }
 
 void AS::compute_choice_information()
 {
-    std::for_each(std::execution::par, std::begin(m_init_choice_info), std::end(m_init_choice_info), [this](auto it)
+    std::for_each(std::execution::par, m_init_choice_info.cbegin(), m_init_choice_info.cend(), [this](auto it)
     {
-        for(auto cit = m_init_choice_info[it.first].cbegin(); cit != m_init_choice_info[it.first].cend(); ++cit)
+        bool l = true;
+        for(auto cit = it.second.cbegin(); cit != it.second.cend(); ++cit)
         {
-            m_choice_info[it.first][cit->first] =  std::pow(m_init_choice_info[it.first][cit->first],m_beta) * std::pow(m_pheromones[it.first][cit->first], m_alpha);
+            double eta_beta =  std::pow(m_init_choice_info.read(it.first, cit->first), m_beta);
+            double tau_alpha = std::pow( m_pheromones.read(it.first, cit->first), m_alpha);
+            m_choice_info.write(it.first,cit->first, tau_alpha * eta_beta);
         }
     });
 }
 
-void AS::evaporate()
-{
-    std::for_each(std::execution::par, std::begin(m_pheromones), std::end(m_pheromones), [this](auto it)
-    {
-        for(auto cit = m_pheromones[it.first].cbegin(); cit != m_pheromones[it.first].cend(); ++cit)
-        {
-            m_pheromones[it.first][cit->first] *= (1 - m_evaporation_rate);
-        }
-    });
-}
+
 
 
 

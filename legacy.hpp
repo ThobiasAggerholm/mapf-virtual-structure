@@ -44,3 +44,64 @@
     // for(double & d : heat_map)
     //     d = d / heat_max;
     // save_to_heat_img("../h.png", n_cols, n_rows, heat_map);
+
+
+// Max Pheromone map
+    // auto const & pheromone_map_0 = aco.m_ant_systems[0].m_pheromones;
+    // int pos = instance.m_start_locations[0];
+    // max_path_0.push_back(pos);
+    // while(pos != instance.m_goal_locations[0])
+    // {
+    //     Node const* curr = &instance.m_my_graph[pos];
+    //     std::vector<int> ns = instance.get_neighbors(pos);
+    //     double max_pheromone = 0;
+    //     int next = ns[0];
+    //     for(int i = 0; i < ns.size(); ++i)
+    //     {
+    //         Node const* cand = &instance.m_my_graph[ns[i]];
+    //         if(cand->vertex_id == instance.m_goal_locations[0])
+    //         {
+    //             next = cand->vertex_id;
+    //             break;
+    //         }
+    //         if(max_pheromone < pheromone_map_0.at(curr).at(cand))
+    //         {
+    //             max_pheromone = pheromone_map_0.at(curr).at(cand);
+    //             next = cand->vertex_id;
+    //         }
+    //     }
+    //     pos = next;
+    //     max_path_0.push_back(pos);
+    // }
+    // instance.map_route_to_image("../output_data/mapf-map/my_map_ant_path_0_max.png", max_path_0);
+
+    // std::vector<int> max_path_1;
+    // max_path_1.reserve(aco.m_as_paths[1].size());
+
+    // auto const & pheromone_map_1 = aco.m_ant_systems[1].m_pheromones;
+    // pos = instance.m_start_locations[1];
+    // max_path_1.push_back(pos);
+    // while(pos != instance.m_goal_locations[1])
+    // {
+    //     Node const* curr = &instance.m_my_graph[pos];
+    //     std::vector<int> ns = instance.get_neighbors(pos);
+    //     double max_pheromone = 0;
+    //     int next = ns[0];
+    //     for(int i = 0; i < ns.size(); ++i)
+    //     {
+    //         Node const* cand = &instance.m_my_graph[ns[i]];
+    //         if(cand->vertex_id == instance.m_goal_locations[1])
+    //         {
+    //             next = cand->vertex_id;
+    //             break;
+    //         }
+    //         if(max_pheromone < pheromone_map_1.at(curr).at(cand))
+    //         {
+    //             max_pheromone = pheromone_map_1.at(curr).at(cand);
+    //             next = cand->vertex_id;
+    //         }
+    //     }
+    //     pos = next;
+    //     max_path_1.push_back(pos);
+    // }
+    // instance.map_route_to_image("../output_data/mapf-map/my_map_ant_path_1_max.png", max_path_1);

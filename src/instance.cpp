@@ -152,7 +152,7 @@ bool Instance::load_graph()
 
 bool Instance::valid_pos(int pos) const
 {
-	if (pos < 0 || pos >= m_map_size)
+	if ((pos < 0) || (pos >= m_map_size))
 		return false;
 	if (m_my_map[pos])
 		return false;
@@ -162,7 +162,7 @@ bool Instance::valid_pos(int pos) const
 
 bool Instance::valid_move(int curr, int next) const
 {
-	if (next < 0 || next >= m_map_size)
+	if ((next < 0) || (next >= m_map_size))
 		return false;
 	if (m_my_map[next])
 		return false;
@@ -232,7 +232,7 @@ bool Instance::map_route_to_image(std::string out_fname, const std::vector<int> 
                     color[1] = 0;
                     color[2] = 255;
                 }
-                else if((*set_path.find(pos)) == path[path.size()-2])
+                else if((*set_path.find(pos)) == path[path.size()-1])
                 {
                     cv::Vec3b & color = img.at<cv::Vec3b>(i,j);
                     color[0] = 0;

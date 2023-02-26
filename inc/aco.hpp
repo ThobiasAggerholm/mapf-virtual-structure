@@ -18,7 +18,9 @@ class  ACO
     
         const Instance & m_instance;
         AStar m_a_star;
+        const AS_Params & m_as_params;
         std::vector<AS> m_ant_systems;
+        EdgeMap m_pheromones;
 
         std::unordered_map<Node const*, std::unordered_map<Node  const*, std::mutex>> m_edge_locks;
         std::unordered_map<Node const*, std::mutex> m_vertex_locks;
@@ -30,6 +32,10 @@ class  ACO
         std::unordered_map<Node const*, std::pair<int, int>> m_node_occupation; // Which AS has how many ants on node pair<AS, n_ants>
 
         std::vector<double> m_as_scores;
+        EdgeMap m_best_pheromones;
+
+        void evaporate();
+        void repair();
 
         void construct_solutions();
         void update_pheromones();
