@@ -100,12 +100,12 @@ void  EdgeMap::add(Node const* src, Node const* dst, double val)
 {
     if(m_edge_map.find(src) == m_edge_map.end())
     {
-        m_edge_map[src][dst];
+        m_edge_map[src][dst] = 0;
         m_mutex_map[src][dst];
     }
     else if(m_edge_map[src].find(dst) == m_edge_map[src].end())
     {
-        m_edge_map[src][dst];
+        m_edge_map[src][dst] = 0;
         m_mutex_map[src][dst];
     }
 
