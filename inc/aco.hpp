@@ -34,7 +34,6 @@ class  ACO
         std::vector<double> m_as_scores;
         EdgeMap m_best_pheromones;
 
-        void evaporate();
         void repair();
 
         void construct_solutions();

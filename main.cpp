@@ -349,7 +349,9 @@ int main(int argc, char** argv)
     as_params.init_pheromone = 0.001;
     as_params.min_pheromone = 0.5;
     as_params.max_pheromone = 1;
-    as_params.evaporation_rate = 0.8;
+    as_params.q0 = 0.1;
+    as_params.K = 3;
+    as_params.deposit = (1./(double(as_params.K) * num_agents));
 
     ACO aco(instance, num_agents, as_params);
     std::cout << "Running ACO" << std::endl;

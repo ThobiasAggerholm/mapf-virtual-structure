@@ -96,6 +96,25 @@ void  EdgeMap::write(Node const* src, Node const* dst, double val)
 
     return;
 }
+void  EdgeMap::add(Node const* src, Node const* dst, double val)
+{
+    if(m_edge_map.find(src) == m_edge_map.end())
+    {
+        m_edge_map[src][dst];
+        m_mutex_map[src][dst];
+    }
+    else if(m_edge_map[src].find(dst) == m_edge_map[src].end())
+    {
+        m_edge_map[src][dst];
+        m_mutex_map[src][dst];
+    }
+
+    m_mutex_map.at(src).at(dst).lock();
+    m_edge_map[src][dst] += val;
+    m_mutex_map.at(src).at(dst).unlock();
+
+    return;
+}
 
 
 bool Ant::move(Node const* next, double cost)
@@ -140,29 +159,33 @@ void Ant::reset()
     m_is_returned_home = false;
 }
 
-void Ant::deposit_pheromone(EdgeMap & pheromone_map)
+void Ant::remove_trail(EdgeMap &  pheromones, double deposit)
 {
-    if(m_found_gold == false)
-        return;
-    double deposit = 1./m_tour_length;
-    //Check if first is last
-    int i_last_edge = (m_is_returned_home) ? m_tour.size() - 1 : m_tour.size(); // From first to goal without cost of returning home
-    for(int i = 1; i < i_last_edge; ++i)
-    {   
-        Node const* src = m_tour[i-1];
-        Node const* dst = m_tour[i]; 
-        if(src == dst)
-            continue; // Wait move
-        pheromone_map.write(src, dst, pheromone_map.read(src,dst) + deposit);
-        pheromone_map.write(dst, src, pheromone_map.read(dst, src) - deposit);
+    for(int i = 0; i < m_tour.size()-2; ++i)  // Last node is home
+    {
+        Node const* curr = m_tour[i];
+        Node const* next = m_tour[i+ 1];
+        pheromones.add(curr, next, -deposit); //Remove deposit
+        pheromones.add(next, curr, deposit);  //Restore previous deposit
+    }
+}
+
+void Ant::put_trail(EdgeMap &  pheromones, double deposit)
+{
+    for(int i = 0; i < m_tour.size()-2; ++i)  // Last node is home
+    {
+        Node const* curr = m_tour[i];
+        Node const* next = m_tour[i+ 1];
+        pheromones.add(curr, next, deposit); //Remove deposit
+        pheromones.add(next, curr, -deposit);  //Restore previous deposit
     }
 }
 
 
 AS::AS(const std::vector<Node> & graph, int n_vertices, int n_ants, double alpha, double beta,
-         double evaporation_rate, double init_pheromone, double max_pheromone, EdgeMap & pheromone_map, EdgeMap * init_choice_info)
-: m_alpha{alpha}, m_beta{beta}, m_evaporation_rate{evaporation_rate}, m_init_pheromone{init_pheromone},
-    m_max_pheromone{max_pheromone}, m_ants(n_ants), m_pheromones{pheromone_map}
+        double init_pheromone, double max_pheromone, double q0,  double K, double deposit, EdgeMap & pheromone_map, EdgeMap * init_choice_info)
+: m_alpha{alpha}, m_beta{beta}, m_init_pheromone{init_pheromone}, m_max_pheromone{max_pheromone},
+ m_q0{q0}, m_K{K}, m_ants(n_ants), m_pheromones{pheromone_map}, m_deposit{deposit}
 {
     m_dim_indices.resize(n_vertices);
     std::iota(m_dim_indices.begin(), m_dim_indices.end(), 0);
@@ -195,6 +218,9 @@ Node const* AS::decision_rule(int k_ant, Node const* curr, const std::vector<Nod
     
     Ant & ant = m_ants[k_ant];
 
+    int max_j  = 0;
+    double max_prop =  std::numeric_limits<double>::min();
+
     int i_neighbor = 0;
     for(auto & neighbor : neighbors)
     {
@@ -204,10 +230,22 @@ Node const* AS::decision_rule(int k_ant, Node const* curr, const std::vector<Nod
         {
             double sp_ij = (sp != nullptr) ? (*sp)[i_neighbor] : 1;
             selection_props[i_neighbor] = m_choice_info.read(curr, neighbor) * sp_ij;
+            if(max_prop < selection_props[i_neighbor])
+            {
+                max_j =i_neighbor;
+                max_prop = selection_props[i_neighbor];
+            }
 
             sum_probs += selection_props[i_neighbor];
         }
         ++i_neighbor;
+    }
+
+    srand(time(NULL));
+    double q = (double(rand()) / double(RAND_MAX) );
+    if(q <= m_q0)
+    {
+        return neighbors[max_j];
     }
     
     int j = 0;
@@ -217,7 +255,6 @@ Node const* AS::decision_rule(int k_ant, Node const* curr, const std::vector<Nod
     }
     else
     {
-        srand(time(NULL));
         double r = (double(rand()) / double(RAND_MAX) ) * sum_probs;
         
         double p = selection_props[j];
@@ -243,19 +280,34 @@ int AS::choose_random_next(int k_ant, Node const* curr, const std::vector<Node c
     return nn;
 }
 
+void AS::add_pop()
+{
+    Ant const* best_ant = &m_ants[0];
+    for(int i = 1; i < m_ants.size(); ++i)
+        if(m_ants[i].m_tour_length < best_ant->m_tour_length)
+            best_ant = &m_ants[i];
+
+    if(m_K <= m_population.size())
+    {
+        m_population.front().remove_trail(m_pheromones, m_deposit);
+        m_population.pop();
+    }
+    m_population.push(*best_ant);
+    m_population.back().put_trail(m_pheromones, m_deposit);
+
+
+}
+
+
 void AS::pheromone_update()
 {
-    for(Ant & ant : m_ants)
-    {
-        ant.deposit_pheromone(m_pheromones);
-    }
+    add_pop();
 }
 
 void AS::compute_choice_information()
 {
     std::for_each(std::execution::par, m_init_choice_info.cbegin(), m_init_choice_info.cend(), [this](auto it)
     {
-        bool l = true;
         for(auto cit = it.second.cbegin(); cit != it.second.cend(); ++cit)
         {
             double eta_beta =  std::pow(m_init_choice_info.read(it.first, cit->first), m_beta);

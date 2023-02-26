@@ -67,7 +67,7 @@ ACO::ACO(const Instance & instance, int n_ant_systems, const AS_Params & ap)
 
     m_ant_systems.reserve(n_ant_systems);
     for(int i = 0; i < n_ant_systems; ++i)
-        m_ant_systems.push_back(AS(*ap.graph, ap.n_vertices, ap.n_ants, ap.alpha, ap.beta, ap.evaporation_rate, ap.init_pheromone, ap.max_pheromone, m_pheromones, ap.init_choice_info));
+        m_ant_systems.push_back(AS(*ap.graph, ap.n_vertices, ap.n_ants, ap.alpha, ap.beta, ap.init_pheromone, ap.max_pheromone, ap.q0, ap.K, ap.deposit, m_pheromones, ap.init_choice_info));
     
 #if OCCUPATION
     for(int i = 0; i < ap.graph->size(); ++i)
@@ -145,18 +145,6 @@ void ACO::run(int IT_NI, int IT_MAX)
             std::cout << "Iteration: "<<  it << std::endl;
     }
 
-}
-
-void ACO::evaporate()
-{
-    std::for_each(std::execution::par, m_pheromones.cbegin(), m_pheromones.cend(), [this](auto it)
-    {
-        for(auto cit = it.second.cbegin(); cit != it.second.cend(); ++cit)
-        {
-            double new_value = (1 - m_as_params.evaporation_rate) *  m_pheromones.read(it.first, cit->first);
-            m_pheromones.write(it.first, cit->first, new_value);
-        }
-    });
 }
 
 void ACO::repair()
