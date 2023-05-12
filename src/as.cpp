@@ -5,263 +5,333 @@
 #include <algorithm>
 #include <execution>
 #include <cmath>
+#include <chrono>
 
-EdgeMap::EdgeMap()
+#define CONFIDENCE 0
+#define EXECUTION_POLICY_AS std::execution::seq
+
+
+bool Ant::move(Node const& next, double edge_cost)
 {
+    assert(m_goal != nullptr);
 
-}
+    bool is_previously_visited = false;
+    auto target_id = get_target().get_id();
 
-EdgeMap::EdgeMap(EdgeMap &src)
- : m_edge_map{std::move(src.m_edge_map)}
-{
-    for(auto cit = m_edge_map.cbegin(); cit != m_edge_map.cend(); ++cit)
+    if(target_id == m_goal->get_id())
     {
-        for(auto cit_inner = cit->second.cbegin(); cit_inner != cit->second.cend(); ++cit_inner)
-        {
-            m_mutex_map[cit->first][cit_inner->first];
-        }
+        is_previously_visited = m_visited_to_goal.find(next.get_id()) != m_visited_to_goal.end();
+        m_visited_to_goal[next.get_id()] = true;
     }
-}
-
-EdgeMap::EdgeMap(const EdgeMap &src)
- : m_edge_map{src.m_edge_map}
-{
-    for(auto cit = m_edge_map.cbegin(); cit != m_edge_map.cend(); ++cit)
+    else if(target_id == m_start->get_id())
     {
-        for(auto cit_inner = cit->second.cbegin(); cit_inner != cit->second.cend(); ++cit_inner)
-        {
-            m_mutex_map[cit->first][cit_inner->first];
-        }
+        is_previously_visited = m_visited_to_start.find(next.get_id()) != m_visited_to_start.end();
+        m_visited_to_start[next.get_id()] = true;
     }
-}
-
-EdgeMap::~EdgeMap()
-{
-
-}
-
-EdgeMap& EdgeMap::operator=(EdgeMap &rhs)
-{
-    m_edge_map = std::move(rhs.m_edge_map);
-    for(auto cit = m_edge_map.cbegin(); cit != m_edge_map.cend(); ++cit)
-    {
-        for(auto cit_inner = cit->second.cbegin(); cit_inner != cit->second.cend(); ++cit_inner)
-        {
-            m_mutex_map[cit->first][cit_inner->first];
-        }
-    }
-    return *this;
-}
-
-EdgeMap& EdgeMap::operator=(const EdgeMap &rhs)
-{
-    m_edge_map = rhs.m_edge_map;
-    for(auto cit = m_edge_map.cbegin(); cit != m_edge_map.cend(); ++cit)
-    {
-        for(auto cit_inner = cit->second.cbegin(); cit_inner != cit->second.cend(); ++cit_inner)
-        {
-            m_mutex_map[cit->first][cit_inner->first];
-        }
-    }
-
-    return *this;
-}
-
-double EdgeMap::read(Node const* src, Node const* dst)
-{
-    double val;
-    m_mutex_map.at(src).at(dst).lock();
-    val = m_edge_map.at(src).at(dst);
-    m_mutex_map.at(src).at(dst).unlock();
-
-    return val;
-}
-
-void  EdgeMap::write(Node const* src, Node const* dst, double val)
-{
-    if(m_edge_map.find(src) == m_edge_map.end())
-    {
-        m_edge_map[src][dst];
-        m_mutex_map[src][dst];
-    }
-    else if(m_edge_map[src].find(dst) == m_edge_map[src].end())
-    {
-        m_edge_map[src][dst];
-        m_mutex_map[src][dst];
-    }
-
-    m_mutex_map.at(src).at(dst).lock();
-    m_edge_map[src][dst] = val;
-    m_mutex_map.at(src).at(dst).unlock();
-
-    return;
-}
-void  EdgeMap::add(Node const* src, Node const* dst, double val)
-{
-    if(m_edge_map.find(src) == m_edge_map.end())
-    {
-        m_edge_map[src][dst] = 0;
-        m_mutex_map[src][dst];
-    }
-    else if(m_edge_map[src].find(dst) == m_edge_map[src].end())
-    {
-        m_edge_map[src][dst] = 0;
-        m_mutex_map[src][dst];
-    }
-
-    m_mutex_map.at(src).at(dst).lock();
-    m_edge_map[src][dst] += val;
-    m_mutex_map.at(src).at(dst).unlock();
-
-    return;
-}
-
-
-bool Ant::move(Node const* next, double cost)
-{
-    bool not_visited = true;
-    if(m_visited.find(next) != m_visited.end())
-        not_visited = false;
     else
-        m_visited[next] = true;
+    {
+        assert(false);
+        return false; // Early return in case of error
+    }
 
-    m_tour.push_back(next);
-    m_tour_length += cost;
+    m_tour.push_back(&next);
+    m_tour_length += edge_cost;
 
-    return not_visited;
+    if(next.get_id() == m_goal->get_id())
+        m_reached_goal = true;
+    
+    if(m_reached_goal && next.get_id() == m_start->get_id())
+        m_reached_start = true;
+    
+    return is_previously_visited;
 }
 
-void Ant::wait()
-{
-    m_tour.push_back(m_tour.back());
-    m_tour_length += 1;
-}
-
-int Ant::return_home()
-{
-    m_tour.push_back(m_tour[0]);
-    m_is_returned_home = true;
-    return m_tour_length;
-}
 
 void Ant::reset()
 {
-    int previous_size = m_tour.size();
-    m_visited.clear();
+    size_t previous_size = m_tour.size();
+
+    m_visited_to_start.clear();
+    m_visited_to_goal.clear();
     m_tour.clear();
+    m_pheromone_trails.clear();
+    m_tour_length = 0;
+
+    m_reached_start = false;
+    m_reached_goal = false; // if the ant found gold then target is m_start
 
     // Memory heuristic
-    m_visited.reserve(previous_size);
+    m_visited_to_start.reserve(previous_size);
+    m_visited_to_goal.reserve(previous_size);
     m_tour.reserve(previous_size);
-
-    m_tour_length = 0;
-    m_found_gold = false;
-    m_is_returned_home = false;
 }
 
-void Ant::remove_trail(EdgeMap &  pheromones, double deposit)
+void Ant::remove_trail(EdgeMap &  pheromones)
 {
-    for(int i = 0; i < m_tour.size()-2; ++i)  // Last node is home
+    for(auto & trail : m_pheromone_trails)
     {
-        Node const* curr = m_tour[i];
-        Node const* next = m_tour[i+ 1];
-        pheromones.add(curr, next, -deposit); //Remove deposit
-        pheromones.add(next, curr, deposit);  //Restore previous deposit
+        pheromones.add(trail.get_src(), trail.get_dst(), -trail.get_deposit());
+        pheromones.add(trail.get_dst(), trail.get_src(), trail.get_deposit());
     }
 }
 
-void Ant::put_trail(EdgeMap &  pheromones, double deposit)
+// double Ant::get_confidence(EdgeMap &  pheromones, Node const* curr, Node const* next, double max_pheromone)
+// {
+//     int current_direction = get_direction(curr->vertex_id, next->vertex_id);
+
+//     Node const* previous =  nullptr;
+//     for(auto it = curr->edges.cbegin(); it != curr->edges.cend(); ++it)
+//     {
+//         if(get_direction(it->first->vertex_id, curr->vertex_id) == current_direction)
+//         {
+//             previous = it->first;
+//             break;
+//         }
+//     }
+
+//     Node const* following = nullptr;
+//     for(auto it = next->edges.cbegin(); it != next->edges.cend(); ++it)
+//     {
+//         if(get_direction(next->vertex_id, it->first->vertex_id) == current_direction)
+//         {
+//             following = it->first;
+//             break;
+//         }
+//     }
+
+//     double confidence = 1.0;
+//     if((previous != nullptr) && (following != nullptr))
+//     {
+//         double prev_curr_diff = pheromones.read(previous, curr) - pheromones.read(curr, previous);
+//         double curr_next_diff  = pheromones.read(next, following) - pheromones.read(following, next);
+//         confidence = std::min(max_pheromone-(std::abs(prev_curr_diff) + std::abs(curr_next_diff))/(4*max_pheromone) + 0.1, max_pheromone);
+//     }
+//     else if(previous != nullptr)
+//     {
+//         double prev_curr_diff = pheromones.read(previous, curr) - pheromones.read(curr, previous);
+//         confidence = std::min(max_pheromone-(std::abs(prev_curr_diff))/(2*max_pheromone) + 0.1, max_pheromone);
+//     }
+//     else if(following != nullptr)
+//     {
+//         double curr_next_diff  = pheromones.read(next, following) - pheromones.read(following, next);
+//         confidence = std::min(max_pheromone-(std::abs(curr_next_diff))/(2*max_pheromone) + 0.1, max_pheromone);
+//     }
+//     return confidence;
+// }
+
+void Ant::set_goal(Node const* goal)
 {
-    for(int i = 0; i < m_tour.size()-2; ++i)  // Last node is home
-    {
-        Node const* curr = m_tour[i];
-        Node const* next = m_tour[i+ 1];
-        pheromones.add(curr, next, deposit); //Remove deposit
-        pheromones.add(next, curr, -deposit);  //Restore previous deposit
-    }
+    assert(goal != nullptr);
+    m_goal = goal;
+}
+
+void Ant::set_start(Node const* start)
+{
+    assert(start != nullptr);
+    m_start = start;
+}
+
+Node const* Ant::get_goal() const
+{
+    return m_goal;
+}
+
+Node const* Ant::get_start() const
+{
+    return m_start;
+}
+
+Node const& Ant::get_target() const
+{
+    Node const* target = m_goal;
+    assert(target != nullptr);
+    return *target;
+}
+ 
+Node const* Ant::get_current_location() const
+{
+    if(m_tour.size() == 0)
+        return nullptr;
+    else
+        return m_tour.back();
 }
 
 
-AS::AS(const std::vector<Node> & graph, int n_vertices, int n_ants, double alpha, double beta,
-        double init_pheromone, double max_pheromone, double q0,  double K, double deposit, EdgeMap & pheromone_map, EdgeMap * init_choice_info)
-: m_alpha{alpha}, m_beta{beta}, m_init_pheromone{init_pheromone}, m_max_pheromone{max_pheromone},
- m_q0{q0}, m_K{K}, m_ants(n_ants), m_pheromones{pheromone_map}, m_deposit{deposit}
+void Ant::put_trail(EdgeMap &  pheromones, double deposit, double max_pheromone)
 {
-    m_dim_indices.resize(n_vertices);
-    std::iota(m_dim_indices.begin(), m_dim_indices.end(), 0);
+    for(size_t i = 0; i < m_tour.size()-2; ++i)  // Last node is home
+    {
+        Node const* curr = m_tour[i];
+        Node const* next = m_tour[i+ 1];
 
+#if CONFIDENCE
+        double confidence = get_confidence(pheromones, curr, next, max_pheromone);
+        confidence = confidence;
+
+        deposit = deposit * confidence;
+#endif
+        m_pheromone_trails.push_back(PheromoneTrail(curr, next, deposit));
+
+        pheromones.add(curr, next, deposit); // Positive deposit
+        pheromones.add(next, curr, -deposit); // Negative deposit
+    }
+}
+
+bool Ant::is_visited(Node const & node) const
+{
+    //auto & m_visited = (!m_reached_goal) ? m_visited_to_goal : m_visited_to_start;
+    auto & m_visited = m_visited_to_goal;
+    return (m_visited.find(node.get_id()) != m_visited.end());
+}
+
+bool Ant::is_completed() const
+{
+    return (m_reached_goal);
+}
+
+
+double Ant::get_tour_length() const
+{
+    return m_tour_length;
+}
+
+std::unordered_map<int, bool> const & Ant::get_visited_to_goal() const
+{
+    return m_visited_to_goal;
+}
+
+std::unordered_map<int, bool> const & Ant::get_visited_to_start() const
+{
+    return m_visited_to_start;
+}
+
+std::vector<Node const*> const & Ant::get_tour() const
+{
+    return m_tour;
+}
+
+void Ant::set_tour(std::vector<Node const*> const & tour)
+{
+    m_tour = tour;
+}
+
+
+AS::AS(AS_Params const& params, EdgeMap & pheromone_map, unsigned int seed)
+: m_params{params}, m_ants(params.n_ants), m_pheromones{pheromone_map}, generator(seed)
+{
     m_ant_indices.resize(m_ants.size());
     std::iota(m_ant_indices.begin(), m_ant_indices.end(), 0);
 
-    if(init_choice_info != nullptr)
-    {
-        m_init_choice_info = *init_choice_info;
-    }
-    else
-    {
-        // Build m_init_choice_info from graph
-        for(int i = 0; i < graph.size(); ++i)
-        {
-            Node const* node = &graph[i];
-            for(auto cit = node->edges.cbegin(); cit != node->edges.cend(); ++cit)
-                m_init_choice_info.write(node, cit->first, cit->second);
-        }
-    }
-
-    compute_choice_information();
+    double equal_prob = (m_params.max_pheromone-m_params.min_pheromone)/2.;
+    entropy_max = -(equal_prob*log(equal_prob) *4);
 }
 
-Node const* AS::decision_rule(int k_ant, Node const* curr, const std::vector<Node const*> & neighbors, std::vector<double> const* heuristics, std::vector<double> const* sp)
+void AS::reset_ants()
 {
-    double sum_probs = 0;
-    std::vector<double> selection_props(neighbors.size());
-    
-    Ant & ant = m_ants[k_ant];
+    for(auto & ant : m_ants)
+    {
+        ant.reset();
+    }
+}
 
-    int max_j  = 0;
-    double max_prop =  std::numeric_limits<double>::min();
+void AS::set_missions(Node const* start, Node const* goal)
+{
+    assert(start != nullptr);
+    assert(goal != nullptr);
+    for(auto & ant : m_ants)
+    {
+        ant.set_start(start);
+        ant.set_goal(goal);
+    }
+    if(m_params.elite_selection)
+    {
+        elite_ant.set_start(start);
+        elite_ant.set_goal(goal);
+    }
+}
+
+Ant & AS::get_ant(int k_ant)
+{
+    assert(k_ant < m_ants.size());
+    return m_ants[k_ant];
+}
+
+Ant & AS::get_elite_ant()
+{
+    return elite_ant;
+}
+
+Ant const & AS::get_elite_ant() const
+{
+    return elite_ant;
+}
+
+std::vector<int> const & AS::get_dim_indices() const
+{
+    return m_dim_indices;
+}
+std::vector<int> const & AS::get_ant_indices() const
+{
+    return m_ant_indices;
+}
+
+
+Node const* AS::decision_rule(int k_ant, Node const* curr, const std::vector<Node const*> & neighbors, std::vector<double> const & hp)
+{
+    assert(k_ant < m_ants.size());
+
+    double sum_probs = 0;
+    std::vector<double> selection_probs(neighbors.size());
+    
+    Ant const & ant = ((k_ant == m_ants.size()) && m_params.elite_selection) ? elite_ant : m_ants[k_ant];
 
     int i_neighbor = 0;
     for(auto & neighbor : neighbors)
     {
-        if(ant.m_visited.find(neighbor) != ant.m_visited.end())
-            selection_props[i_neighbor] = 0;
+        if(ant.is_visited(*neighbor))
+            selection_probs[i_neighbor] = 0;
         else
         {
-            double sp_ij = (sp != nullptr) ? (*sp)[i_neighbor] : 1;
-            selection_props[i_neighbor] = m_choice_info.read(curr, neighbor) * sp_ij;
-            if(max_prop < selection_props[i_neighbor])
-            {
-                max_j =i_neighbor;
-                max_prop = selection_props[i_neighbor];
-            }
-
-            sum_probs += selection_props[i_neighbor];
+            double hp_ij = (i_neighbor < hp.size()) ? hp[i_neighbor] : 1;
+            double pheromone_level = std::clamp(m_pheromones.read(curr, neighbor), m_params.min_pheromone, m_params.max_pheromone);
+            selection_probs[i_neighbor] = std::pow(pheromone_level, m_params.alpha) * std::pow(hp_ij, m_params.beta);
+            sum_probs += selection_probs[i_neighbor];
         }
         ++i_neighbor;
     }
 
-    srand(time(NULL));
-    double q = (double(rand()) / double(RAND_MAX) );
-    if(q <= m_q0)
-    {
+    // Find the maximum probability
+    int max_j = std::distance(selection_probs.begin(), std::max_element(selection_probs.begin(), selection_probs.end()));
+    double max_prob = selection_probs[max_j];
+
+    std::uniform_real_distribution<double> distribution(0.0,1.0);
+    double q = distribution(generator);
+
+    if(q <= m_params.q0) //If greedy decision 
+    {  
+        if((max_j == -1) || (sum_probs == 0.))// but equal distribution
+        {
+            std::uniform_int_distribution<> distribution_int(0, neighbors.size()-1);
+            max_j = distribution_int(generator);
+        }
+            
         return neighbors[max_j];
     }
     
     int j = 0;
-    if(sum_probs == 0)
+    if(sum_probs == 0.)
     {
         j = choose_random_next(k_ant, curr, neighbors);
     }
     else
     {
-        double r = (double(rand()) / double(RAND_MAX) ) * sum_probs;
+        double r = distribution(generator) * sum_probs;
         
-        double p = selection_props[j];
+        double p = selection_probs[j];
         while(p < r)
         {
             j = j + 1;
-            p += selection_props[j];
+            p += selection_probs[j];
         }
     }
     return neighbors[j];
@@ -269,55 +339,133 @@ Node const* AS::decision_rule(int k_ant, Node const* curr, const std::vector<Nod
 
 int AS::choose_random_next(int k_ant, Node const* curr, const std::vector<Node const*> & neighbors)
 {
-    // std::cout << "----" << std::endl;
-    // std::cout << curr->vertex_id % 9 << ", " << int(curr->vertex_id / 9) << std::endl;
-    // for(int i = 0; i < neighbors.size(); ++i)
-    //     std::cout << "n: " << neighbors[i]->vertex_id % 9 << ", " << int(neighbors[i]->vertex_id / 9) << std::endl;
-    std::random_device rd; // obtain a random number from hardware
-    std::mt19937 gen(rd()); // seed the generator
     std::uniform_int_distribution<> distr(0, neighbors.size()-1); // define the range
-    int nn = distr(gen);
+    int nn = distr(generator);
     return nn;
 }
 
-void AS::add_pop()
+void AS::add_population()
 {
-    Ant const* best_ant = &m_ants[0];
-    for(int i = 1; i < m_ants.size(); ++i)
-        if(m_ants[i].m_tour_length < best_ant->m_tour_length)
-            best_ant = &m_ants[i];
-
-    if(m_K <= m_population.size())
+    Ant const * best_ant = nullptr;
+    for(int i = 0; i < m_ants.size(); ++i)
     {
-        m_population.front().remove_trail(m_pheromones, m_deposit);
-        m_population.pop();
+        if(m_ants[i].is_completed() && (best_ant == nullptr))
+            best_ant = &m_ants[i];
+        else if(m_ants[i].is_completed() && ( m_ants[i].get_tour_length() < best_ant->get_tour_length()))
+            best_ant = &m_ants[i];
     }
-    m_population.push(*best_ant);
-    m_population.back().put_trail(m_pheromones, m_deposit);
 
+    if(best_ant == nullptr)
+        return;
 
+    //If ant length is less then elite ant length then replace, else add population
+    if( m_params.elite_selection && ( (elite_ant.get_tour_length() > best_ant->get_tour_length()) || !elite_ant.is_completed() ))
+    {
+        if(elite_ant.is_completed())
+            elite_ant.remove_trail(m_pheromones);
+
+        elite_ant = *best_ant;
+        remove_loops(elite_ant);
+        elite_ant.put_trail(m_pheromones, m_params.deposit, m_params.max_pheromone);
+    }
+    else
+    {
+        // Add new  best ant
+        Ant population_ant = *best_ant;
+        remove_loops(population_ant);
+        m_population.push_back(population_ant);
+        m_population.back().put_trail(m_pheromones, m_params.deposit, m_params.max_pheromone);
+
+        //Remove the oldest ant
+        if(m_params.K < m_population.size())
+        {
+            m_population.front().remove_trail(m_pheromones);
+            m_population.pop_front();
+        }
+    }
 }
 
 
 void AS::pheromone_update()
 {
-    add_pop();
+    double last_best = (!m_population.empty()) ? m_population.back().get_tour_length() : std::numeric_limits<double>::max();
+
+    add_population();
+    
+    ++iter;
+    if(!m_population.empty() && (m_population.back().get_tour_length() > last_best))
+        iter_ni = 0;
+    else
+        ++iter_ni;
 }
 
-void AS::compute_choice_information()
+
+void AS::remove_loops(Ant & ant) const
 {
-    std::for_each(std::execution::par, m_init_choice_info.cbegin(), m_init_choice_info.cend(), [this](auto it)
+    Node const* start = ant.get_start();
+    Node const* goal = ant.get_goal();
+    auto const & ant_tour = ant.get_tour();
+    if(ant_tour.empty())
+        return;
+
+    std::unordered_map<Node const*, int> visited_to_goal;
+    std::unordered_map<Node const*, int> visited_to_start;
+    populate_visited_maps(visited_to_goal, visited_to_start, ant_tour, goal);
+
+    std::vector<Node const*> new_tour;
+    new_tour.reserve(ant_tour.size());
+    create_new_tour_without_loops(new_tour, ant_tour, visited_to_goal, visited_to_start, goal);
+
+    ant.set_tour(new_tour);
+}
+//Fills [start : goal] and ]goal : start] maps
+void AS::populate_visited_maps(std::unordered_map<Node const*, int> & visited_to_goal, std::unordered_map<Node const*, int> & visited_to_start, const std::vector<Node const*> & ant_tour, Node const* goal) const
+{
+    bool is_goal_reached = false;
+    std::unordered_map<Node const*, int> * visited = &visited_to_goal;
+    for(int i = 0; i < ant_tour.size(); ++i)
     {
-        for(auto cit = it.second.cbegin(); cit != it.second.cend(); ++cit)
-        {
-            double eta_beta =  std::pow(m_init_choice_info.read(it.first, cit->first), m_beta);
-            double tau_alpha = std::pow( m_pheromones.read(it.first, cit->first), m_alpha);
-            m_choice_info.write(it.first,cit->first, tau_alpha * eta_beta);
-        }
-    });
+        Node const* curr = ant_tour[i];
+        (*visited)[curr] = i;
+
+        if(curr == goal)
+            is_goal_reached = true;
+
+        visited = (is_goal_reached) ? &visited_to_start : &visited_to_goal;
+    }
 }
 
+void AS::create_new_tour_without_loops(std::vector<Node const*> & new_tour, std::vector<Node const*> const & ant_tour, std::unordered_map<Node const*, int> const & visited_to_goal, std::unordered_map<Node const*, int> const & visited_to_start, Node const* goal) const
+{
+    bool is_goal_reached = false;
+    for(int i = 0; i < ant_tour.size();)
+    {
+        Node const* curr = ant_tour.at(i);
+        new_tour.push_back(curr);
 
+        if(curr == goal)
+            is_goal_reached = true;
+
+        if(i == ant_tour.size()-1)
+            break;
+
+        auto const & visited = (is_goal_reached) ? visited_to_start : visited_to_goal;
+        for(auto it = curr->cbegin(); it != curr->cend(); ++it) // Loop over neighbors
+        {
+            if(visited.find(it->first) != visited.end()) // If visited later fast forward
+            {
+                if(i < visited.at(it->first))
+                    i = visited.at(it->first);
+            }
+        }
+    }
+}
+
+void AS::tune_parameters()
+{
+    if(m_params.tune_greedy_selection_prob)
+        m_params.q0 = 0.0 + 1./((double)iter_ni + 1.0);
+}
 
 
 

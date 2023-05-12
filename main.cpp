@@ -1,6 +1,7 @@
 #include "inc/instance.hpp"
 #include "inc/as.hpp"
 #include "inc/aco.hpp"
+#include "inc/astar_environment.hpp"
 
 #include <iostream>
 #include <string>
@@ -11,8 +12,12 @@
 #include <algorithm>
 #include <execution>
 #include <chrono>
+#include <utility>
 
 #include <opencv2/opencv.hpp>
+
+#include "test_files/inc/intensification_test.hpp"
+#include "test_files/inc/global_pheromone_test.hpp"
 
 template <typename Func>
 void getExecutionTime(const std::string& title, Func func)
@@ -23,182 +28,7 @@ void getExecutionTime(const std::string& title, Func func)
     std::cout << title << ": " << dur.count() << " sec. " << std::endl;
 }
 
-bool save_to_heat_img(std::string f_name, int n_cols, int n_rows, const std::vector<double> & heat_map)
-{
-        // Determine the width and height of the ASCII art
-    int width = n_cols;
-    int height = n_rows;
 
-    // Create a black image with the specified width and height
-    cv::Mat img(height, width, CV_8UC3, cv::Scalar(0, 0, 0));
-
-	for (int i = 0; i < height; i++)
-	{
-		for (int j = 0; j < width; j++)
-		{
-            int pos = width * i + j;
-
-            int red_color = heat_map[pos] * 255;
-            if(255 < red_color)
-            {
-                std::cout << "Color out of range " << red_color << std::endl;
-                red_color = 255;
-            }
-
-            cv::Vec3b & color = img.at<cv::Vec3b>(i,j);
-            color[0] = 0;
-            color[1] = 0;
-            color[2] = red_color;
-        }
-    }
-	// Save the image
-    return cv::imwrite(f_name, img);
-}
-
-bool agent_path_search(std::vector<Cell> & cell_details, const Instance & instance, int start, int goal, EdgeMap & pheromones, int k)
-{
-	// If the source is out of range
-    if( instance.valid_pos(start) == false )
-    {
-        return false;
-    }
-
-	// If the destination is out of range
-    if( instance.valid_pos(goal) == false )
-    {
-        return false;
-    }
-
-	// If the destination cell is the same as source cell
-	if ( start == goal )
-    {
-		return false;
-	}
-
-	// Create a closed list and initialise it to false which
-	// means that no cell has been included yet This closed
-	// list is implemented as a boolean 2D array
-	std::vector<bool> closedList(instance.m_map_size, false);
-
-	// Declare a 2D array of structure to hold the details
-	// of that cell
-    cell_details.resize(instance.m_map_size);
-
-	for(Cell & cell : cell_details)
-    {
-        cell.f = INFINITY;
-        cell.g = INFINITY;
-        cell.h = INFINITY;
-        cell.parent_i = -1;
-    }
-
-	// Initialising the parameters of the starting node
-    cell_details[start].f = 0;
-    cell_details[start].g = 0;
-    cell_details[start].h = 0;
-    cell_details[start].parent_i = start;
-
-	/*
-	Create an open list having information as-
-	<f, i>
-	where f = g + h,
-	and i is the index of that cell
-	This open list is implemented as a set of pairs
-    */
-	std::set<std::pair<double, int>> openList;
-
-	// Put the starting cell on the open list and set its
-	// 'f' as 0
-	openList.insert(std::make_pair(0.0, start));
-
-	// We set this boolean value as false as initially
-	// the destination is not reached.
-	bool found_dest = false;
-
-	while (!openList.empty())
-    {
-		auto p = *openList.begin();
-
-		// Remove this vertex from the open list
-		openList.erase(openList.begin());
-
-		// Add this vertex to the closed list
-        int i = p.second;
-		closedList[i] = true;
-
-		// To store the 'g', 'h' and 'f' of the 4 successors
-		double gNew, hNew, fNew;
-        std::vector<int> successors = instance.get_neighbors(i);
-        for(const int & successor : successors)
-        {
-            if(successor == goal)
-            {
-                cell_details[successor].parent_i = i;
-                found_dest = true;
-                return found_dest;
-            }
-            // If the successor is already on the closed
-			// list or if it is blocked, then ignore it.
-			// Else do the following
-            else if (closedList[successor] == false)
-            {
-				gNew = cell_details[i].g + instance.get_neighbor_distance(i, successor);
-                Node const* curr = &instance.m_my_graph[i];
-                Node const* next = &instance.m_my_graph[successor];
-				hNew = instance.get_manhattan_distance(successor, goal) - (pheromones.read(curr,next) * k) + (pheromones.read(next, curr) * k);
-                // Transition cost from q to p
-                // Heuristic of p
-                // Penalty -> k * pheromone opposite
-                // Reward -> k * pheromone in direction    
-				fNew = gNew + hNew;
-
-				// If it isn’t on the open list, add it to
-				// the open list. Make the current square
-				// the parent of this square. Record the
-				// f, g, and h costs of the square cell
-				//			 OR
-				// If it is on the open list already, check
-				// to see if this path to that square is
-				// better, using 'f' cost as the measure.
-				if ((cell_details[successor].f == FLT_MAX)
-					|| (cell_details[successor].f > fNew))
-                {
-					openList.insert(std::make_pair(
-						fNew,successor));
-
-					// Update the details of this cell
-					cell_details[successor].f = fNew;
-					cell_details[successor].g = gNew;
-					cell_details[successor].h = hNew;
-					cell_details[successor].parent_i = i;
-				}
-			}
-        }
-    }
-    return found_dest;
-}
-
-std::vector<int> agent_path(const Instance & instance, int start, int goal, EdgeMap & pheromones, int k)
-{
-    std::vector<Cell> cell_details;
-    bool dest_found = agent_path_search(cell_details, instance, start, goal, pheromones, k);
-    if(!dest_found)
-        return {};
-    
-    int pos = goal;
-
-	std::vector<int> path;
-
-	while (cell_details[pos].parent_i != pos)
-    {
-		path.push_back(pos);
-		pos = cell_details[pos].parent_i;
-	}
-
-	path.push_back(pos);
-
-    return path;
-}
 
 bool draw_edge_map(std::string f_name, const Instance & instance, EdgeMap & pheromones)
 {
@@ -321,70 +151,489 @@ bool draw_edge_map(std::string f_name, const Instance & instance, EdgeMap & pher
     return cv::imwrite(f_name, scaled_image);
 }
 
-
+#define TERMINAL 0
 
 //Driver function
 int main(int argc, char** argv)
 {
-    // if(argc < 4)
-    //     std::cout << "Expected four commandline arguements. Recieved " << argc << std::endl; return 1;
-    //std::string  map_fname = argv[1]; // For release
-    //std::string  agent_fname = argv[2]; // For release
-    //int num_agents = argv[3]; // For release
+#if TERMINAL
+    if (argc != 4) {
+        std::cout << "Usage: " << argv[0] << " arg1 arg2" << std::endl;
+        return 1;
+    }
 
-    std::string map_fname_in = "../benchmark_data/mapf-map/my_map.map"; // For debugging
-    std::string map_fname_out = "../output_data/mapf-map/my_map.png"; // For debugging
+    int arg1 = std::stoi(argv[1]);
+    int arg2 = std::stoi(argv[2]);
 
-    std::string agent_fname = "../benchmark_data/mapf-scen-random/my_scene.scen"; // For debugging
-    int num_agents = 2; // For debugging
+    std::string path_prefix = ""; 
+#else
+    int arg1 = 0;
+    int arg2 = 0;
+    std::string path_prefix = "../"; 
+#endif
+    //IntensificationTest::test_ab();
+    //IntensificationTest::test_q0();
 
-    Instance instance(map_fname_in, agent_fname, num_agents);
+    std::vector<std::string> test_extensions = {"", "_elite"};
 
-    AS_Params as_params;
-    as_params.graph = &instance.m_my_graph;
-    as_params.n_vertices = instance.m_map_size;
-    as_params.n_ants = 25;
-    as_params.alpha = 1;
-    as_params.beta = 1;
-    as_params.init_pheromone = 0.001;
-    as_params.min_pheromone = 0.5;
-    as_params.max_pheromone = 1;
-    as_params.q0 = 0.1;
-    as_params.K = 3;
-    as_params.deposit = (1./(double(as_params.K) * num_agents));
+    std::string map_extension = ".map";
+    std::string scenario_extension = ".scen";
 
-    ACO aco(instance, num_agents, as_params);
-    std::cout << "Running ACO" << std::endl;
-    aco.run(1000, 10000);
-    std::cout << "Finished  ACO" << std::endl;
+    std::vector<std::string> maps = {"den312d", "warehouse-10-20-10-2-1", "ost003d"};
+    std::vector<std::string> scenarios = {"den312d-random-1", "warehouse-10-20-10-2-1-random-1", "ost003d-random-1"};
+    std::vector<std::pair<int, int>> mission_ranges = {{0, 29}, {30, 59}, {60, 89}, {90, 119}, {120, 149}};
+    int repetitions = 20;
+
+    std::vector<int> maps_indexes = {0, 1, 2};
+    std::vector<int> mission_range_indexes = {0,1,2,3,4};
+    std::vector<int> test_extension_range = {1};
+    std::for_each(test_extension_range.begin(), test_extension_range.end(), [&](int t_e)
+    {
+        bool elite = false;
+        std::string test_extension = test_extensions[t_e];
+        if(t_e == 1)
+            elite = true;
+            
+        std::for_each(std::execution::par, maps_indexes.begin(), maps_indexes.end(), [&](int maps_idx)
+        {
+            std::string map_name = maps[maps_idx];
+            std::string scenario_name = scenarios[maps_idx];
+
+            std::for_each(std::execution::par, mission_range_indexes.begin(), mission_range_indexes.end(), [&](int mission_range_idx)
+            {
+                try{
+                    GlobalPheromoneTester global_pheromone_tester;
+                    std::vector<int> missions(30); 
+                    auto mission_range = mission_ranges[mission_range_idx];
+                    std::iota(missions.begin(), missions.end(), mission_range.first);
+                    global_pheromone_tester.load_missions(missions);
+                    global_pheromone_tester.set_repetitions(repetitions);
+
+                    int file_mission_range_idx = mission_range_idx + 1;
+                    std::string output_file = path_prefix + "test_files/test_data/global_pheromone_map/evaluation" + test_extension + "/" + map_name + "/mission_range" + std::to_string(file_mission_range_idx) + "/";
+                    global_pheromone_tester.set_output_file(output_file);
+                    global_pheromone_tester.load_instance(path_prefix + "benchmark_data/mapf-map/" + map_name + map_extension, path_prefix + "benchmark_data/mapf-scen-random/" + scenario_name + scenario_extension);
+
+                    AS_Params as_params;
+                    as_params.elite_selection = elite;
+                    as_params.n_ants = 20;
+                    as_params.min_pheromone = 0.001;
+                    as_params.max_pheromone = 1;
+                    as_params.K = 6;
+                    as_params.deposit = ((as_params.max_pheromone- as_params.min_pheromone)/(double((as_params.K + (int)as_params.elite_selection)*2.)));
+                    as_params.alpha = 4.;
+                    as_params.beta = 1.;
+                    as_params.q0 = 0.0;
+                    as_params.tune_greedy_selection_prob = true;
+
+                    ACO_Params aco_params;
+                    aco_params.conflict_penalty = 1.0;
+                    aco_params.IT_NI = 100;//100;
+                    aco_params.IT_MAX = 1000;
+                    aco_params.IT_INFO = -1;
+                    aco_params.MAX_STEPS = 500;
+
+                    global_pheromone_tester.set_default_as_params(as_params);
+                    global_pheromone_tester.set_default_aco_params(aco_params);
+
+                    global_pheromone_tester.enable_tuning(elite);
+                    
+                    global_pheromone_tester.run_basic_evaluate_experiment();
+
+                    cv::Mat map = create_map(global_pheromone_tester.get_instance());
+                    draw_missions(map, global_pheromone_tester.get_instance(), missions);
+                    cv::imwrite(output_file + "map_missions.png", map);
+                }
+                catch(std::exception& e)
+                {
+                    std::cout << "Failed " << map_name << " with mission range " << mission_range_idx + 1 << std::endl;
+                    std::cout << e.what() << std::endl;
+                }
+            });
+        });
+    });
+        // GlobalPheromoneTester global_pheromone_tester;
+        // std::vector<int> missions(max_mission); 
+        // std::iota(missions.begin(), missions.end(), 0);
+        // global_pheromone_tester.load_missions(missions);
+        // global_pheromone_tester.set_repetitions(20);
+
+        // global_pheromone_tester.set_output_file("../test_files/test_data/global_pheromone_map/" + map_name + "/");
+        // global_pheromone_tester.load_instance("../benchmark_data/mapf-map/" + map_name + map_extension, "../benchmark_data/mapf-scen-random/" + scenario_name + scenario_extension);
+
+        // AS_Params as_params;
+        // as_params.elite_selection = false;
+        // as_params.n_ants = 20;
+        // as_params.min_pheromone = 0.001;
+        // as_params.max_pheromone = 1;
+        // as_params.K = 6;
+        // as_params.deposit = ((as_params.max_pheromone- as_params.min_pheromone)/(double((as_params.K + (int)as_params.elite_selection)*2.)));
+        // as_params.alpha = 4.;
+        // as_params.beta = 1.;
+        // as_params.q0 = 0.0;
+        // as_params.tune_greedy_selection_prob = true;
+
+        // ACO_Params aco_params;
+        // aco_params.conflict_penalty = 1.0;
+        // aco_params.IT_NI = 100;//100;
+        // aco_params.IT_MAX = 1000;
+        // aco_params.IT_INFO = -1;
+        // aco_params.MAX_STEPS = 500;
+
+        // global_pheromone_tester.set_default_as_params(as_params);
+        // global_pheromone_tester.set_default_aco_params(aco_params);
+
+        // // global_pheromone_tester.set_alpha_values({2., 3., 4., 5., 6.});
+        // // global_pheromone_tester.set_beta_values({1., 2., 3.});
+        
+        
+        // // global_pheromone_tester.set_q0(0.0);
+        // global_pheromone_tester.enable_tuning(true);
+
+        // // global_pheromone_tester.set_alpha_values({ 4.});
+        // global_pheromone_tester.set_beta_values({1.});
+
+        // std::vector<int> mission_idxs(30);
+        // std::iota(mission_idxs.begin(), mission_idxs.end(), 0);
+        // cv::Mat map = create_map(global_pheromone_tester.get_instance());
+        // draw_missions(map, global_pheromone_tester.get_instance(), mission_idxs);
+        // cv::imwrite("../test_files/test_data/global_pheromone_map/den312d/omega_6/map_missions_mapf.png", map);
+
+        //global_pheromone_tester.run_astar_experiment();
+        // global_pheromone_tester.set_k_values({1, 2, 3, 4, 5, 6, 7, 8, 9, 10});
+        // global_pheromone_tester.run_retention_experiment();
+        // global_pheromone_tester.set_omega_values({1, 5, 10, 15, 20, 25, 30, 35, 40, 45});
+        // global_pheromone_tester.run_omega_experiment();
+
+        /*
+            Evaluate full algorithm:
+                1) Multiple Environments (The three mentioned)
+                2) Different sets of missions
+                3) Heatmap Average
+                4) Costs
+                5) Number of conflicts
+                6) Conflict types
+                7) Arrow map for path structure
+
+        */
+        // global_pheromone_tester.write_output();
+
+        
+    return 0;
+
+//     // if(argc < 4)
+//     //     std::cout) << "Expected four commandline arguements. Recieved " << argc << std::endl; return 1;
+//     //std::string  map_fname = argv[1]; // For release
+//     //std::string  agent_fname = argv[2]; // For release
+//     //int num_agents = argv[3]; // For release
+
+// #define MYMAP 0
+// #if MYMAP
+//     std::string map_fname_in = "../benchmark_data/mapf-map/my_map.map"; // For debugging
+//     std::string map_fname_out = "../output_data/mapf-map/my_map.png"; // For debugging
+
+//     std::string agent_fname = "../benchmark_data/mapf-scen-random/my_scene.scen"; // For debugging
+//     int num_agents = 3; // For debugging
+// #else
+//     std::string map_fname_in = "../benchmark_data/mapf-map/den312d.map"; // For debugging
+//     std::string map_fname_out = "../output_data/mapf-map/den312d.png"; // For debugging
+
+//     std::string agent_fname = "../benchmark_data/mapf-scen-random/den312d-random-1.scen"; // For debugging
+//     int num_agents = 25; // For debugging
+// #endif
+
+//     Instance instance(map_fname_in, agent_fname, num_agents);
+
+//     //Create agents path and check collisions
+
+//     AS_Params as_params;
+//     as_params.graph = &instance.m_my_graph;
+//     as_params.n_vertices = instance.m_map_size;
+//     as_params.n_ants = 25;
+//     as_params.alpha = 1;
+//     as_params.beta = 1;
+//     as_params.min_pheromone = 0.001;
+//     as_params.max_pheromone = 1;
+//     as_params.q0 = 0.2;
+//     as_params.K = 3;
+//     as_params.deposit = (as_params.max_pheromone/(double(as_params.K*2.)));
+
+//     ACO_Params aco_params;
+//     aco_params.conflict_penalty = 1.0;
+//     aco_params.IT_NI = 100;//100;
+//     aco_params.IT_MAX = 1000;
+//     aco_params.IT_INFO = 10;
+//     aco_params.MAX_STEPS = 500;
+//     aco_params.n_agents = num_agents;
+//     aco_params.starts.resize(num_agents);
+//     aco_params.goals.resize(num_agents);
+//     aco_params.init_pheromone = 0.5;
+
+//     for(int i = 0; i < num_agents; ++i)
+//     {
+//         assert(instance.m_start_locations[i] != instance.m_goal_locations[i]);
+//         aco_params.goals[i] = &instance.m_my_graph[instance.m_goal_locations[i]];
+//         aco_params.starts[i] = &instance.m_my_graph[instance.m_start_locations[i]];
+//     }
+
+//     ACO aco(instance, aco_params, as_params);
+//     {
+//         double k = 0.;
+//         std::vector<std::vector<int>> agent_paths(num_agents);
+//         for(int i = 0; i < num_agents; ++i)
+//         {
+//             agent_paths[i] = agent_path(instance, instance.m_start_locations[i], instance.m_goal_locations[i], aco.get_best_pheromone_map(), k);
+//         }
+
+//     //Check agents path and check number of collisions
+//        //Check agents path and check number of collisions
+//         int num_collisions = 0;
+//         int last_time_step = 0;
+//         for(int i = 0; i < num_agents; ++i)
+//         {
+//             if(agent_paths[i].size() > last_time_step)
+//                 last_time_step = agent_paths[i].size();
+//         }
+//         int scale_factor = 30;
+//         cv::VideoWriter video_writer("/home/thob_agg/bin/mapf-virtual-structure/output_data/videos/input_001.avi", cv::VideoWriter::fourcc('M','J','P','G'), 1, cv::Size(scale_factor * instance.m_num_of_cols, scale_factor * instance.m_num_of_rows));
+//         std::cout << "Recording video" << std::endl;
+//         cv::Mat img(instance.m_num_of_rows, instance.m_num_of_cols, CV_8UC3, cv::Scalar(0, 0, 0)); // BGR
+//         for (int i = 0; i < instance.m_num_of_rows; i++)
+//         {
+//             for (int j = 0; j < instance.m_num_of_cols; j++)
+//             {
+//                 int pos = instance.linearize_coordinate(i, j);
+//                 bool type = instance.m_my_map[pos];
+
+//                 if(type == 1)
+//                 {
+//                     img.at<cv::Vec3b>(i, j) = cv::Vec3b(100, 100, 100);
+//                     continue;
+//                 }
+//                 else if(type == 0)
+//                 {
+//                     img.at<cv::Vec3b>(i, j) = cv::Vec3b(255, 255, 255);
+//                 }
+//            }
+//         }
+
+        
+//         cv::Mat scaled_image;
+//         cv::resize(img, scaled_image, cv::Size(), scale_factor, scale_factor, cv::INTER_NEAREST_EXACT);
+//         video_writer.write(scaled_image);
+//         for(int time_step = 0; time_step < last_time_step; ++time_step)
+//         {
+//             cv::Mat new_frame = img.clone();
+//             std::unordered_map<int, int>  occupied_vertex;
+//             std::unordered_map<int, std::unordered_set<int>>  occupied_edge;
+//             for(int i = 0; i < num_agents; ++i)
+//             {
+//                 if(agent_paths[i].size() <= time_step)
+//                     continue;
+//                 if(occupied_vertex.find(agent_paths[i][time_step]) == occupied_vertex.end())
+//                     occupied_vertex[agent_paths[i][time_step]] = 1;
+//                 else
+//                     occupied_vertex[agent_paths[i][time_step]] += 1;
+
+//                 if(time_step > 0)
+//                     occupied_edge[agent_paths[i][time_step - 1]].insert(agent_paths[i][time_step]);
+//             }
+//             std::unordered_set<int>  conflict_vertex;
+//             std::unordered_map<int, std::unordered_set<int>>  conflict_edge;
+//             for(int i = 0; i < num_agents; ++i)
+//             {
+//                 if(agent_paths[i].size() <= time_step)
+//                     continue;
+
+//                 if(occupied_vertex.at(agent_paths[i][time_step]) > 1) //Vertex collision
+//                 {
+//                     int row = instance.get_row_coordinate(agent_paths[i][time_step]);
+//                     int col = instance.get_col_coordinate(agent_paths[i][time_step]);
+//                     new_frame.at<cv::Vec3b>(row, col) = cv::Vec3b(0, 0, 255);
+//                     if(conflict_vertex.find(agent_paths[i][time_step]) == conflict_vertex.end())
+//                     {
+//                         conflict_vertex.insert(agent_paths[i][time_step]);
+//                         ++num_collisions;
+//                     }
+//                 }
+//                 else if((time_step > 0) && (occupied_edge.find(agent_paths[i][time_step]) != occupied_edge.end()) && (occupied_edge.at(agent_paths[i][time_step]).find(agent_paths[i][time_step-1]) != occupied_edge.at(agent_paths[i][time_step]).end())) //Edge collision
+//                 {
+//                     int row = instance.get_row_coordinate(agent_paths[i][time_step]);
+//                     int col = instance.get_col_coordinate(agent_paths[i][time_step]);
+//                     new_frame.at<cv::Vec3b>(row, col) = cv::Vec3b(0, 0, 255);
+
+//                     conflict_edge[agent_paths[i][time_step - 1]];
+//                     conflict_edge[agent_paths[i][time_step - 1]].insert(agent_paths[i][time_step]);
+//                     if(conflict_edge.find(agent_paths[i][time_step]) == conflict_edge.end()) //Check
+//                         ++num_collisions;
+//                     else if(conflict_edge.at(agent_paths[i][time_step]).find(agent_paths[i][time_step - 1]) == conflict_edge.at(agent_paths[i][time_step]).end())
+//                         ++num_collisions;
+//                 }
+//                 else
+//                 {
+//                     int row = instance.get_row_coordinate(agent_paths[i][time_step]);
+//                     int col = instance.get_col_coordinate(agent_paths[i][time_step]);
+//                     new_frame.at<cv::Vec3b>(row, col) = cv::Vec3b(255, 0, 0);
+//                 }
+//             }
+
+//             cv::Mat scaled_image;
+//             cv::resize(new_frame, scaled_image, cv::Size(), scale_factor, scale_factor, cv::INTER_NEAREST_EXACT);
+//             video_writer.write(scaled_image);
+//         }
+//         std::cout << "Number of collisions before ACO: " << num_collisions << std::endl;
+//         video_writer.release();
+//         std::cout << "Finished recording video" << std::endl;
+//     }
+
+    
+//     std::cout << "Running ACO" << std::endl;
+//     aco.run();
+//     std::cout << "Finished  ACO" << std::endl;
+//     //Save aco.m_results_log to file
+//     std::ofstream results_file;
+//     results_file.open("../test_files/test_data/alpha_beta_1_1.csv");
+//     auto results_log = aco.get_results_log();
+//     for(int i = 0; i < results_log.size(); ++i)
+//     {
+//         results_file << std::get<0>(results_log[i]) << ", " << std::get<1>(results_log[i]) << ", " << std::get<2>(results_log[i]) << ", " << std::get<3>(results_log[i]) << std::endl;
+//     }
+
+//     //Check agents path and check number of collisions
+
 
     
 
-    // std::vector<int> best_path_0(aco.m_as_paths[0].size());
-    // for(int i = 0; i < best_path_0.size(); ++i)
-    //     best_path_0[i] = aco.m_as_paths[0][i]->vertex_id;
+//     // std::vector<int> best_path_0(aco.m_as_paths[0].size());
+//     // for(int i = 0; i < best_path_0.size(); ++i)
+//     //     best_path_0[i] = aco.m_as_paths[0][i]->vertex_id;
 
-    // std::vector<int> best_path_1(aco.m_as_paths[1].size());
-    // for(int i = 0; i < best_path_1.size(); ++i)
-    //     best_path_1[i] = aco.m_as_paths[1][i]->vertex_id;
+//     // std::vector<int> best_path_1(aco.m_as_paths[1].size());
+//     // for(int i = 0; i < best_path_1.size(); ++i)
+//     //     best_path_1[i] = aco.m_as_paths[1][i]->vertex_id;
 
-    // if(!best_path_0.empty())
-    //     instance.map_route_to_image("../output_data/mapf-map/my_map_ant_path_0.png", best_path_0);
+//     // if(!best_path_0.empty())
+//     //     instance.map_route_to_image("../output_data/mapf-map/my_map_ant_path_0.png", best_path_0);
 
-    // if(!best_path_1.empty())
-    //     instance.map_route_to_image("../output_data/mapf-map/my_map_ant_path_1.png", best_path_1);
+//     // if(!best_path_1.empty())
+//     //     instance.map_route_to_image("../output_data/mapf-map/my_map_ant_path_1.png", best_path_1);
+//     {
+//         double k = 1;
+//         std::vector<std::vector<int>> agent_paths(num_agents);
+//         for(int i = 0; i < num_agents; ++i)
+//         {
+//             agent_paths[i] = agent_path(instance, aco.m_aco_params.starts[i]->get_id(), aco.m_aco_params.goals[i]->get_id(), aco.get_best_pheromone_map(), k);
+//             //instance.map_route_to_image("../output_data/mapf-map/my_map_agent_path_" + std::to_string(i) + ".png", agent_paths[i]);
+//         }
+//         //Check agents path and check number of collisions
+//         int num_collisions = 0;
+//         int last_time_step = 0;
+//         for(int i = 0; i < num_agents; ++i)
+//         {
+//             if(agent_paths[i].size() > last_time_step)
+//                 last_time_step = agent_paths[i].size();
+//         }
+//         int scale_factor = 30;
+//         cv::VideoWriter video_writer("/home/thob_agg/bin/mapf-virtual-structure/output_data/videos/output_001.avi", cv::VideoWriter::fourcc('M','J','P','G'), 1, cv::Size(scale_factor * instance.m_num_of_cols, scale_factor * instance.m_num_of_rows));
+//         std::cout << "Recording video" << std::endl;
+//         cv::Mat img(instance.m_num_of_rows, instance.m_num_of_cols, CV_8UC3, cv::Scalar(0, 0, 0)); // BGR
+//         for (int i = 0; i < instance.m_num_of_rows; i++)
+//         {
+//             for (int j = 0; j < instance.m_num_of_cols; j++)
+//             {
+//                 int pos = instance.linearize_coordinate(i, j);
+//                 bool type = instance.m_my_map[pos];
 
-    int k = 1;
-    for(int i = 0; i < num_agents; ++i)
-    {
-        std::vector<int> path = agent_path(instance, instance.m_start_locations[i], instance.m_goal_locations[i], aco.m_best_pheromones, k);
-        instance.map_route_to_image("../output_data/mapf-map/my_map_agent_path_" + std::to_string(i) + ".png", path);
-    }
-    draw_edge_map("../output_data/mapf-map/my_map_aco_edge_map_latest.png", instance, aco.m_pheromones);
-    draw_edge_map("../output_data/mapf-map/my_map_aco_edge_map_best.png", instance, aco.m_best_pheromones);
-    //Draw EdgeMap
-        //Go through map and make black if not valid
-        // Else draw intensity of efach edge in four blocks
+//                 if(type == 1)
+//                 {
+//                     img.at<cv::Vec3b>(i, j) = cv::Vec3b(100, 100, 100);
+//                     continue;
+//                 }
+//                 else if(type == 0)
+//                 {
+//                     img.at<cv::Vec3b>(i, j) = cv::Vec3b(255, 255, 255);
+//                 }
+//         }   }
 
-    return 0;
+        
+//         cv::Mat scaled_image;
+//         cv::resize(img, scaled_image, cv::Size(), scale_factor, scale_factor, cv::INTER_NEAREST_EXACT);
+//         video_writer.write(scaled_image);
+//         for(int time_step = 0; time_step < last_time_step; ++time_step)
+//         {
+//             cv::Mat new_frame = img.clone();
+//             std::unordered_map<int, int>  occupied_vertex;
+//             std::unordered_map<int, std::unordered_set<int>>  occupied_edge;
+//             for(int i = 0; i < num_agents; ++i)
+//             {
+//                 if(agent_paths[i].size() <= time_step)
+//                     continue;
+//                 if(occupied_vertex.find(agent_paths[i][time_step]) == occupied_vertex.end())
+//                     occupied_vertex[agent_paths[i][time_step]] = 1;
+//                 else
+//                     occupied_vertex[agent_paths[i][time_step]] += 1;
+
+//                 if(time_step > 0)
+//                     occupied_edge[agent_paths[i][time_step - 1]].insert(agent_paths[i][time_step]);
+//             }
+//             std::unordered_set<int>  conflict_vertex;
+//             std::unordered_map<int, std::unordered_set<int>>  conflict_edge;
+//             for(int i = 0; i < num_agents; ++i)
+//             {
+//                 if(agent_paths[i].size() <= time_step)
+//                     continue;
+
+//                 if(occupied_vertex.at(agent_paths[i][time_step]) > 1) //Vertex collision
+//                 {
+//                     int row = instance.get_row_coordinate(agent_paths[i][time_step]);
+//                     int col = instance.get_col_coordinate(agent_paths[i][time_step]);
+//                     new_frame.at<cv::Vec3b>(row, col) = cv::Vec3b(0, 0, 255);
+//                     if(conflict_vertex.find(agent_paths[i][time_step]) == conflict_vertex.end())
+//                     {
+//                         conflict_vertex.insert(agent_paths[i][time_step]);
+//                         ++num_collisions;
+//                     }
+//                 }
+//                 else if((time_step > 0) && (occupied_edge.find(agent_paths[i][time_step]) != occupied_edge.end()) && (occupied_edge.at(agent_paths[i][time_step]).find(agent_paths[i][time_step-1]) != occupied_edge.at(agent_paths[i][time_step]).end())) //Edge collision
+//                 {
+//                     int row = instance.get_row_coordinate(agent_paths[i][time_step]);
+//                     int col = instance.get_col_coordinate(agent_paths[i][time_step]);
+//                     new_frame.at<cv::Vec3b>(row, col) = cv::Vec3b(0, 0, 255);
+
+//                     conflict_edge[agent_paths[i][time_step - 1]];
+//                     conflict_edge[agent_paths[i][time_step - 1]].insert(agent_paths[i][time_step]);
+//                     if(conflict_edge.find(agent_paths[i][time_step]) == conflict_edge.end()) //Check
+//                         ++num_collisions;
+//                     else if(conflict_edge.at(agent_paths[i][time_step]).find(agent_paths[i][time_step - 1]) == conflict_edge.at(agent_paths[i][time_step]).end())
+//                         ++num_collisions;
+//                 }
+//                 else
+//                 {
+//                     int row = instance.get_row_coordinate(agent_paths[i][time_step]);
+//                     int col = instance.get_col_coordinate(agent_paths[i][time_step]);
+//                     new_frame.at<cv::Vec3b>(row, col) = cv::Vec3b(255, 0, 0);
+//                 }
+//             }
+//             cv::Mat scaled_image;
+//             cv::resize(new_frame, scaled_image, cv::Size(), scale_factor, scale_factor, cv::INTER_NEAREST_EXACT);
+//             video_writer.write(scaled_image);
+//         }
+//         std::cout << "Number of collisions after ACO: " << num_collisions << std::endl;
+//         video_writer.release();
+//         std::cout << "Finished recording video" << std::endl;
+//     }
+
+//     draw_edge_map("../output_data/mapf-map/my_map_aco_edge_map_latest.png", instance, aco.get_pheromone_map());
+//     draw_edge_map("../output_data/mapf-map/my_map_aco_edge_map_best.png", instance, aco.get_best_pheromone_map());
+
+//     return 0;
 }
+
+
+//TODO
+    /*
+        //Only compute choice info for edges that are in the path
+
+        Paper on network flow
+        Local optimization of paths
+    */

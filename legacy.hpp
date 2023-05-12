@@ -105,3 +105,42 @@
     //     max_path_1.push_back(pos);
     // }
     // instance.map_route_to_image("../output_data/mapf-map/my_map_ant_path_1_max.png", max_path_1);
+
+
+//ELITE ANTS
+    // std::vector<Ant> elite_ants;
+    // elite_ants.reserve(n_ant_systems);
+
+    //For each instance start goal pair run AStar and build ant for injection into AS population
+    // AStar astar(instance);
+    // for(int i = 0; i < instance.m_start_locations.size(); ++i)
+    // {
+    //     assert(instance.m_start_locations[i] != instance.m_goal_locations[i]);
+    //     std::vector<Cell> cell_details;
+    //     m_a_star.search(cell_details, instance.m_start_locations[i], instance.m_goal_locations[i]);
+    //     std::vector<int> path = m_a_star.trace_path(cell_details, instance.m_goal_locations[i]); // Path is backtraced from goal to start
+
+    //     // Build ant for injection ant with path into AS population
+    //     elite_ants.push_back(Ant());
+    //     Ant & ant = elite_ants.back();
+    //     ant.reset();
+    //     ant.move(&(*m_as_params.graph)[path.back()], 0);
+
+    //     for(int i_path = path.size()-1; i_path > 0; --i_path)
+    //     {
+    //         int id_curr = path[i_path];
+    //         int id_next = path[i_path - 1];
+    //         Node const* curr = &(*m_as_params.graph)[id_curr];
+    //         Node const* next = &(*m_as_params.graph)[id_next];
+
+    //         double transition_cost = m_instance.m_my_graph.at(curr->vertex_id).edges.at(next);
+    //         ant.move(next, transition_cost);
+    //     }
+    //     ant.return_home();
+    // }        // Inject elite ants into AS population
+        // m_ant_systems[i].inject_ant(elite_ants[i]);
+            // repair();
+    // for(int i = 0; i < n_ant_systems; ++i)
+    // {
+    //     m_ant_systems[i].compute_choice_information();
+    // }

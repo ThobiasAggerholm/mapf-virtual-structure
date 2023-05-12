@@ -13,7 +13,7 @@ AStar::AStar(const Instance & instance)
 // A Function to find the shortest path between
 // a given source cell to a destination cell according
 // to A* Search Algorithm
-bool AStar::search(std::vector<Cell> & cell_details, const int & src, const int & goal)
+bool AStar::search(std::vector<Cell> & cell_details, const int & src, const int & goal) const
 {
 	// If the source is out of range
     if( m_instance.valid_pos(src) == false )
@@ -153,7 +153,7 @@ bool AStar::search(std::vector<Cell> & cell_details, const int & src, const int 
 }
 
 // A Utility Function to calculate the 'h' heuristics.
-double AStar::calculate_h_value(int pos, int goal)
+double AStar::calculate_h_value(int pos, int goal) const
 {
 	// Return using the distance formula
 	return m_instance.get_manhattan_distance(pos, goal);
@@ -161,7 +161,7 @@ double AStar::calculate_h_value(int pos, int goal)
 
 // A Utility Function to trace the path from the source
 // to destination
-std::vector<int> AStar::trace_path(const std::vector<Cell> & cell_details, int goal)
+std::vector<int> AStar::trace_path(const std::vector<Cell> & cell_details, int goal) const
 {
     int pos = goal;
 

@@ -15,10 +15,10 @@ class AStar
     public:
         //Configure distance setting
         AStar(const Instance & instance);
-        bool search(std::vector<Cell> & cell_details, const int & src, const int & goal);
+        bool search(std::vector<Cell> & cell_details, const int & src, const int & goal) const;
 
-        double calculate_h_value(int pos, int goal);
-        std::vector<int> trace_path(const std::vector<Cell> & cell_details, int goal);
+        double calculate_h_value(int pos, int goal) const;
+        std::vector<int> trace_path(const std::vector<Cell> & cell_details, int goal)  const;
 
 
 

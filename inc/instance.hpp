@@ -10,7 +10,7 @@ class Instance
 {
     public:
 
-
+        Instance() {}
         Instance(const std::string& map_fname, const std::string& agent_fname,
                  int num_of_agents = 0, const std::string& agent_indices = "");
         
@@ -36,7 +36,7 @@ class Instance
             assert(valid_move(curr, nb));
             Node const* p_nb = &m_my_graph[nb];
 
-            return m_my_graph[curr].edges.at(p_nb);
+            return m_my_graph[curr].at(p_nb);
         }
 
         bool valid_pos(int pos) const;
@@ -48,7 +48,10 @@ class Instance
         bool save_map(std::string out_fname) const;
         bool map_route_to_image(std::string out_fname, const std::vector<int> & path) const;
 
+        Instance ROI(int start_row, int start_col, int end_row, int end_col) const;
 
+        int get_start_mission(int agent_id) const { return m_start_locations.at(agent_id); }
+        int get_goal_mission(int agent_id) const { return m_goal_locations.at(agent_id); }
 
         int m_num_of_cols = 0;
         int m_num_of_rows = 0;
@@ -64,6 +67,8 @@ class Instance
         std::vector<int> m_start_locations;
 	    std::vector<int> m_goal_locations;
         std::vector<double> m_optimal_lengths;
+
+        bool instance_loaded = false;
 
         bool load_map();
         bool load_agents();

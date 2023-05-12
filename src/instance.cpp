@@ -21,6 +21,8 @@ Instance::Instance(const std::string& map_fname, const std::string& agent_fname,
     succ = load_graph();
     if(!succ)
         std::cout << "Could not load graph from map" << std::endl;
+
+    instance_loaded = succ;
 }
 
 bool Instance::load_map()
@@ -74,6 +76,12 @@ bool Instance::load_map()
 bool Instance::load_agents()
 {
 	using namespace std;
+    if (m_num_of_agents < 1)
+    {
+        cout << "The number of agents should be larger than 0" << endl;
+        return false;
+    }
+    
 	ifstream myfile(m_agent_fname);
 	if (!myfile.is_open())
 		return false;
@@ -81,11 +89,7 @@ bool Instance::load_agents()
 	string line;
 	getline(myfile, line);
 
-    if (m_num_of_agents < 1)
-    {
-        cout << "The number of agents should be larger than 0" << endl;
-        return false;
-    }
+
     m_start_locations.resize(m_num_of_agents);
     m_goal_locations.resize(m_num_of_agents);
     m_optimal_lengths.resize(m_num_of_agents);
@@ -137,13 +141,13 @@ bool Instance::load_graph()
     m_my_graph.resize(m_my_map.size());
     for(int i = 0; i < m_my_map.size(); ++i)
     {
-        m_my_graph[i].vertex_id = i;
+        m_my_graph[i].set_id(i);
         std::vector<int> neighbors = get_neighbors(i);
         for(int i_nb = 0; i_nb < neighbors.size(); ++i_nb)
         {
             int nb = neighbors[i_nb];
             Node* p_nb = &m_my_graph[nb];
-            m_my_graph[i].edges[p_nb] = get_manhattan_distance(i, nb);
+            m_my_graph[i].insert_edge(p_nb, get_manhattan_distance(i, nb));
         }
     }
     
@@ -172,7 +176,7 @@ bool Instance::valid_move(int curr, int next) const
 std::vector<int> Instance::get_neighbors(int curr) const
 {
     std::vector<int> neighbors;
-	std::vector<int> candidates = {curr + 1, curr - 1, curr + m_num_of_cols, curr - m_num_of_cols};
+	std::vector<int> candidates = {curr + 1, curr - 1, curr + m_num_of_cols, curr - m_num_of_cols}; // right, left, down, up
 	for(int next : candidates)
 	{
 		if (valid_move(curr, next))
@@ -229,15 +233,15 @@ bool Instance::map_route_to_image(std::string out_fname, const std::vector<int> 
                     // get pixel
                     cv::Vec3b & color = img.at<cv::Vec3b>(i,j);
                     color[0] = 0;
-                    color[1] = 0;
-                    color[2] = 255;
+                    color[1] = 255;
+                    color[2] = 0;
                 }
                 else if((*set_path.find(pos)) == path[path.size()-1])
                 {
                     cv::Vec3b & color = img.at<cv::Vec3b>(i,j);
                     color[0] = 0;
-                    color[1] = 255;
-                    color[2] = 0;
+                    color[1] = 0;
+                    color[2] = 255;
                 }
                 else
                 {
@@ -267,4 +271,30 @@ bool Instance::map_route_to_image(std::string out_fname, const std::vector<int> 
 	}
 	// Save the image
     return cv::imwrite(out_fname, img);
+}
+
+Instance Instance::ROI(int start_row, int start_col, int end_row, int end_col) const
+{
+    assert(start_row < end_row);
+    assert(start_col < end_col);
+
+    Instance roi;
+    roi.m_num_of_rows = end_row - start_row + 1;
+    roi.m_num_of_cols = end_col - start_col + 1;
+
+    roi.m_map_size = roi.m_num_of_rows * roi.m_num_of_cols;
+    roi.m_my_map.resize(roi.m_map_size);
+
+    roi.m_start_locations.reserve(m_num_of_agents);
+    roi.m_goal_locations.reserve(m_num_of_agents);
+    roi.m_optimal_lengths.reserve(m_num_of_agents);
+
+    for(int i = 0; i < roi.m_num_of_rows; ++i)
+    {
+        for(int j = 0; j < roi.m_num_of_cols; ++j)
+        {
+            roi.m_my_map[roi.linearize_coordinate(i, j)] = m_my_map[linearize_coordinate(i + start_row, j + start_col)];
+        }
+    }
+    return roi;
 }
