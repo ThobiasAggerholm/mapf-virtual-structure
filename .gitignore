@@ -40,3 +40,4 @@
 
 #Ignore cmake build files
 /build/
+/test_files/test_data/
