@@ -75,50 +75,6 @@ void Ant::remove_trail(EdgeMap &  pheromones)
     }
 }
 
-// double Ant::get_confidence(EdgeMap &  pheromones, Node const* curr, Node const* next, double max_pheromone)
-// {
-//     int current_direction = get_direction(curr->vertex_id, next->vertex_id);
-
-//     Node const* previous =  nullptr;
-//     for(auto it = curr->edges.cbegin(); it != curr->edges.cend(); ++it)
-//     {
-//         if(get_direction(it->first->vertex_id, curr->vertex_id) == current_direction)
-//         {
-//             previous = it->first;
-//             break;
-//         }
-//     }
-
-//     Node const* following = nullptr;
-//     for(auto it = next->edges.cbegin(); it != next->edges.cend(); ++it)
-//     {
-//         if(get_direction(next->vertex_id, it->first->vertex_id) == current_direction)
-//         {
-//             following = it->first;
-//             break;
-//         }
-//     }
-
-//     double confidence = 1.0;
-//     if((previous != nullptr) && (following != nullptr))
-//     {
-//         double prev_curr_diff = pheromones.read(previous, curr) - pheromones.read(curr, previous);
-//         double curr_next_diff  = pheromones.read(next, following) - pheromones.read(following, next);
-//         confidence = std::min(max_pheromone-(std::abs(prev_curr_diff) + std::abs(curr_next_diff))/(4*max_pheromone) + 0.1, max_pheromone);
-//     }
-//     else if(previous != nullptr)
-//     {
-//         double prev_curr_diff = pheromones.read(previous, curr) - pheromones.read(curr, previous);
-//         confidence = std::min(max_pheromone-(std::abs(prev_curr_diff))/(2*max_pheromone) + 0.1, max_pheromone);
-//     }
-//     else if(following != nullptr)
-//     {
-//         double curr_next_diff  = pheromones.read(next, following) - pheromones.read(following, next);
-//         confidence = std::min(max_pheromone-(std::abs(curr_next_diff))/(2*max_pheromone) + 0.1, max_pheromone);
-//     }
-//     return confidence;
-// }
-
 void Ant::set_goal(Node const* goal)
 {
     assert(goal != nullptr);
@@ -157,7 +113,7 @@ Node const* Ant::get_current_location() const
 }
 
 
-void Ant::put_trail(EdgeMap &  pheromones, double deposit, double max_pheromone)
+void Ant::put_trail(EdgeMap &  pheromones, double deposit, double max_pheromone, bool add_trail)
 {
     for(size_t i = 0; i < m_tour.size()-2; ++i)  // Last node is home
     {
@@ -170,7 +126,8 @@ void Ant::put_trail(EdgeMap &  pheromones, double deposit, double max_pheromone)
 
         deposit = deposit * confidence;
 #endif
-        m_pheromone_trails.push_back(PheromoneTrail(curr, next, deposit));
+        if(add_trail)
+            m_pheromone_trails.push_back(PheromoneTrail(curr, next, deposit));
 
         pheromones.add(curr, next, deposit); // Positive deposit
         pheromones.add(next, curr, -deposit); // Negative deposit
@@ -217,7 +174,7 @@ void Ant::set_tour(std::vector<Node const*> const & tour)
 
 
 AS::AS(AS_Params const& params, EdgeMap & pheromone_map, unsigned int seed)
-: m_params{params}, m_ants(params.n_ants), m_pheromones{pheromone_map}, generator(seed)
+: m_params{params}, m_ants(params.n_ants), m_pheromones_global{pheromone_map}, m_pheromones_local{static_cast<const EdgeMap &>(pheromone_map)},  generator(seed)
 {
     m_ant_indices.resize(m_ants.size());
     std::iota(m_ant_indices.begin(), m_ant_indices.end(), 0);
@@ -293,8 +250,10 @@ Node const* AS::decision_rule(int k_ant, Node const* curr, const std::vector<Nod
         else
         {
             double hp_ij = (i_neighbor < hp.size()) ? hp[i_neighbor] : 1;
-            double pheromone_level = std::clamp(m_pheromones.read(curr, neighbor), m_params.min_pheromone, m_params.max_pheromone);
-            selection_probs[i_neighbor] = std::pow(pheromone_level, m_params.alpha) * std::pow(hp_ij, m_params.beta);
+            double pheromone_level_global = std::clamp(m_pheromones_global.read(curr, neighbor), m_params.min_pheromone, m_params.max_pheromone);
+            double pheromone_level_local = std::clamp(m_pheromones_local.read(curr, neighbor), m_params.min_pheromone, m_params.max_pheromone);
+        
+            selection_probs[i_neighbor] = std::pow(pheromone_level_global, m_params.alpha) * std::pow(hp_ij, m_params.beta) * std::pow(pheromone_level_local, m_params.gamma);
             sum_probs += selection_probs[i_neighbor];
         }
         ++i_neighbor;
@@ -362,11 +321,15 @@ void AS::add_population()
     if( m_params.elite_selection && ( (elite_ant.get_tour_length() > best_ant->get_tour_length()) || !elite_ant.is_completed() ))
     {
         if(elite_ant.is_completed())
-            elite_ant.remove_trail(m_pheromones);
+        {
+            elite_ant.remove_trail(m_pheromones_global);
+            elite_ant.remove_trail(m_pheromones_local);
+        }
 
         elite_ant = *best_ant;
         remove_loops(elite_ant);
-        elite_ant.put_trail(m_pheromones, m_params.deposit, m_params.max_pheromone);
+        elite_ant.put_trail(m_pheromones_global, m_params.deposit, m_params.max_pheromone);
+        elite_ant.put_trail(m_pheromones_local, m_params.deposit, m_params.max_pheromone, false);
     }
     else
     {
@@ -374,12 +337,14 @@ void AS::add_population()
         Ant population_ant = *best_ant;
         remove_loops(population_ant);
         m_population.push_back(population_ant);
-        m_population.back().put_trail(m_pheromones, m_params.deposit, m_params.max_pheromone);
+        m_population.back().put_trail(m_pheromones_global, m_params.deposit, m_params.max_pheromone);
+        m_population.back().put_trail(m_pheromones_local, m_params.deposit, m_params.max_pheromone, false);
 
         //Remove the oldest ant
         if(m_params.K < m_population.size())
         {
-            m_population.front().remove_trail(m_pheromones);
+            m_population.front().remove_trail(m_pheromones_global);
+            m_population.front().remove_trail(m_pheromones_local);
             m_population.pop_front();
         }
     }

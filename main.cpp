@@ -151,6 +151,31 @@ bool draw_edge_map(std::string f_name, const Instance & instance, EdgeMap & pher
     return cv::imwrite(f_name, scaled_image);
 }
 
+void redraw_heatmap(std::string fname, std::string fname_new, std::vector<std::pair<cv::Vec3b, cv::Vec3b>> const & mappings)
+{
+    // Load the image
+    cv::Mat image = cv::imread(fname);
+
+    // Iterate over each pixel in the image
+    for (int i = 0; i < image.rows; i++)
+    {
+        for (int j = 0; j < image.cols; j++)
+        {
+            cv::Vec3b& pixel = image.at<cv::Vec3b>(i, j);
+
+            // Check if the pixel color matches any of the old colors
+            for(auto mapping : mappings)
+            {
+                if(pixel == mapping.first)
+                    pixel = mapping.second;
+            }
+        }
+    }
+
+    // Display the modified image
+    cv::imwrite(fname_new, image);
+}
+
 #define TERMINAL 0
 
 //Driver function
@@ -173,8 +198,19 @@ int main(int argc, char** argv)
 #endif
     //IntensificationTest::test_ab();
     //IntensificationTest::test_q0();
+    // Define the colors to replace
+    // cv::Vec3b oldColor1(255 - 85, 255 - 85, 255);   // Blue (255-0, 255-85, 255)
+    // cv::Vec3b oldColor2(255 - 170, 255 - 170, 255);  // Green (255-0, 255-170, 255)
+    // cv::Vec3b oldColor3(255 - 255, 255 - 255, 255);  // Cyan (255-0, 255-255, 255)
 
-    std::vector<std::string> test_extensions = {"", "_elite"};
+    // cv::Vec3b newColor1(255 - 63, 255 - 63, 255);   // New Blue (255-0, 255-63, 255)
+    // cv::Vec3b newColor2(255 - 127, 255 - 127, 255);  // New Green (255-0, 255-127, 255)
+    // cv::Vec3b newColor3(255 - 191, 255 - 191, 255);  // New Cyan (255-0, 255-191, 255)
+    // std::vector<std::pair<cv::Vec3b, cv::Vec3b>> mapping = {{oldColor1, newColor1}, {oldColor2, newColor2}, {oldColor3, newColor3}};
+    // redraw_heatmap("../test_files/test_data/global_pheromone_map/evaluation/den312d/mission_range5/heatmap_astar_after.png", "../test_files/test_data/global_pheromone_map/evaluation/den312d/mission_range5/heatmap_astar_after_redraw.png", mapping);
+    // return 0;
+
+    std::vector<std::string> test_extensions = {"", "_local"};
 
     std::string map_extension = ".map";
     std::string scenario_extension = ".scen";
@@ -221,8 +257,9 @@ int main(int argc, char** argv)
                     as_params.max_pheromone = 1;
                     as_params.K = 6;
                     as_params.deposit = ((as_params.max_pheromone- as_params.min_pheromone)/(double((as_params.K + (int)as_params.elite_selection)*2.)));
-                    as_params.alpha = 4.;
+                    as_params.alpha = 7.;
                     as_params.beta = 1.;
+                    as_params.gamma = 4.;
                     as_params.q0 = 0.0;
                     as_params.tune_greedy_selection_prob = true;
 

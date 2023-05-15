@@ -35,7 +35,7 @@ class Ant
         void reset();
 
         void remove_trail(EdgeMap & pheromones);
-        void put_trail(EdgeMap & pheromones, double deposit, double max_pheromone);
+        void put_trail(EdgeMap & pheromones, double deposit, double max_pheromone, bool add_trail = true);
 
         bool is_visited(Node const & node) const;
         bool is_completed() const;
@@ -83,6 +83,7 @@ struct AS_Params
     int n_ants = 0;
     double alpha = 1;
     double beta = 1;
+    double gamma = 1;
     
     double min_pheromone = 0.5;
     double max_pheromone = 1;
@@ -144,8 +145,8 @@ class AS
         ASLog m_log;
 
 
-        EdgeMap & m_pheromones;
-        EdgeMap m_choice_info;
+        EdgeMap & m_pheromones_global;
+        EdgeMap m_pheromones_local;
 
         std::deque<Ant> m_population;
 
