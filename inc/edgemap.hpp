@@ -35,6 +35,8 @@ class EdgeMap
         void  write(Node const* src, Node const* dst, double val);
         void add(Node const* src, Node const* dst, double val);
 
+        void export_geometric(std::string fname, int map_width, int map_height) const;
+
         double reduce();
         size_t size() const;
 

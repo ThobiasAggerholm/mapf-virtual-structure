@@ -176,6 +176,18 @@ void redraw_heatmap(std::string fname, std::string fname_new, std::vector<std::p
     cv::imwrite(fname_new, image);
 }
 
+std::vector<std::vector<int>> generateRanges(int start, int numGroups, int interval) {
+    std::vector<std::vector<int>> ranges;
+    for (int i = 0; i < numGroups; ++i) {
+        std::vector<int> range;
+        for (int j = 0; j < interval; ++j) {
+            range.push_back(start + i * interval + j);
+        }
+        ranges.push_back(range);
+    }
+    return ranges;
+}
+
 #define TERMINAL 0
 
 //Driver function
@@ -210,85 +222,192 @@ int main(int argc, char** argv)
     // redraw_heatmap("../test_files/test_data/global_pheromone_map/evaluation/den312d/mission_range5/heatmap_astar_after.png", "../test_files/test_data/global_pheromone_map/evaluation/den312d/mission_range5/heatmap_astar_after_redraw.png", mapping);
     // return 0;
 
-    std::vector<std::string> test_extensions = {"", "_local"};
+    std::vector<std::string> test_extensions = {"_base", "_elite", "_local", "_dynamic_penalty"};
 
     std::string map_extension = ".map";
     std::string scenario_extension = ".scen";
 
     std::vector<std::string> maps = {"den312d", "warehouse-10-20-10-2-1", "ost003d"};
     std::vector<std::string> scenarios = {"den312d-random-1", "warehouse-10-20-10-2-1-random-1", "ost003d-random-1"};
-    std::vector<std::pair<int, int>> mission_ranges = {{0, 29}, {30, 59}, {60, 89}, {90, 119}, {120, 149}};
-    int repetitions = 20;
+    std::vector<std::vector<int>> mission_ranges_training = generateRanges(0, 5, 30);
+    std::vector<std::vector<int>> mission_ranges_evaluation = generateRanges(150, 28, 30);
+    std::vector<int> all_missions(999);
+    std::iota(all_missions.begin(), all_missions.end(), 0);
+    int repetitions = 2;
+
+    bool astar_before = false;
+    std::mutex mutex;
 
     std::vector<int> maps_indexes = {0, 1, 2};
-    std::vector<int> mission_range_indexes = {0,1,2,3,4};
-    std::vector<int> test_extension_range = {1};
-    std::for_each(test_extension_range.begin(), test_extension_range.end(), [&](int t_e)
+    std::vector<int> test_extension_range = {0, 1, 2, 3};
+    std::for_each(std::execution::par, test_extension_range.begin(), test_extension_range.end(), [&](int t_e)
     {
         bool elite = false;
+        bool local = false;
+        bool dynamic_penalty = false;
         std::string test_extension = test_extensions[t_e];
         if(t_e == 1)
             elite = true;
+        else if(t_e == 2)
+            local = true;
+        else if(t_e == 3)
+            dynamic_penalty = true;
             
         std::for_each(std::execution::par, maps_indexes.begin(), maps_indexes.end(), [&](int maps_idx)
         {
             std::string map_name = maps[maps_idx];
             std::string scenario_name = scenarios[maps_idx];
 
-            std::for_each(std::execution::par, mission_range_indexes.begin(), mission_range_indexes.end(), [&](int mission_range_idx)
-            {
-                try{
-                    GlobalPheromoneTester global_pheromone_tester;
-                    std::vector<int> missions(30); 
-                    auto mission_range = mission_ranges[mission_range_idx];
-                    std::iota(missions.begin(), missions.end(), mission_range.first);
-                    global_pheromone_tester.load_missions(missions);
-                    global_pheromone_tester.set_repetitions(repetitions);
+            try{
+                GlobalPheromoneTester global_pheromone_tester;
 
-                    int file_mission_range_idx = mission_range_idx + 1;
-                    std::string output_file = path_prefix + "test_files/test_data/global_pheromone_map/evaluation" + test_extension + "/" + map_name + "/mission_range" + std::to_string(file_mission_range_idx) + "/";
-                    global_pheromone_tester.set_output_file(output_file);
-                    global_pheromone_tester.load_instance(path_prefix + "benchmark_data/mapf-map/" + map_name + map_extension, path_prefix + "benchmark_data/mapf-scen-random/" + scenario_name + scenario_extension);
+                global_pheromone_tester.load_missions(all_missions);
+                global_pheromone_tester.set_repetitions(repetitions);
 
-                    AS_Params as_params;
-                    as_params.elite_selection = elite;
-                    as_params.n_ants = 20;
-                    as_params.min_pheromone = 0.001;
-                    as_params.max_pheromone = 1;
-                    as_params.K = 6;
-                    as_params.deposit = ((as_params.max_pheromone- as_params.min_pheromone)/(double((as_params.K + (int)as_params.elite_selection)*2.)));
-                    as_params.alpha = 7.;
-                    as_params.beta = 1.;
-                    as_params.gamma = 4.;
-                    as_params.q0 = 0.0;
-                    as_params.tune_greedy_selection_prob = true;
+                std::string output_file = path_prefix + "test_files/test_data/global_pheromone_map_reuse/evaluation" + test_extension + "/" + map_name + "/";
+                global_pheromone_tester.set_output_file(output_file);
+                global_pheromone_tester.load_instance(path_prefix + "benchmark_data/mapf-map/" + map_name + map_extension, path_prefix + "benchmark_data/mapf-scen-random/" + scenario_name + scenario_extension);
 
-                    ACO_Params aco_params;
-                    aco_params.conflict_penalty = 1.0;
-                    aco_params.IT_NI = 100;//100;
-                    aco_params.IT_MAX = 1000;
-                    aco_params.IT_INFO = -1;
-                    aco_params.MAX_STEPS = 500;
 
-                    global_pheromone_tester.set_default_as_params(as_params);
-                    global_pheromone_tester.set_default_aco_params(aco_params);
 
-                    global_pheromone_tester.enable_tuning(elite);
-                    
-                    global_pheromone_tester.run_basic_evaluate_experiment();
+                AS_Params as_params;
+                as_params.elite_selection = elite;
+                as_params.n_ants = 20;
+                as_params.min_pheromone = 0.001;
+                as_params.max_pheromone = 1;
+                as_params.K = 6;
+                as_params.deposit = ((as_params.max_pheromone- as_params.min_pheromone)/(double((as_params.K + (int)as_params.elite_selection)*2.)));
+                as_params.alpha = (local) ? 7. : 4.;
+                as_params.beta = 1.;
+                as_params.gamma = (local) ? 4. : 0.0;
+                as_params.q0 = 0.0;
+                as_params.tune_greedy_selection_prob = true;
 
-                    cv::Mat map = create_map(global_pheromone_tester.get_instance());
-                    draw_missions(map, global_pheromone_tester.get_instance(), missions);
-                    cv::imwrite(output_file + "map_missions.png", map);
-                }
-                catch(std::exception& e)
+                ACO_Params aco_params;
+                aco_params.conflict_penalty = 1.0;
+                aco_params.IT_NI = 100;//100;
+                aco_params.IT_MAX = 1000;
+                aco_params.IT_INFO = -1;
+                aco_params.MAX_STEPS = 500;
+                aco_params.increase_penalty = dynamic_penalty;
+                aco_params.init_pheromone = (1. - 0.001)/2.;
+
+                global_pheromone_tester.set_default_as_params(as_params);
+                global_pheromone_tester.set_default_aco_params(aco_params, 30);
+
+                global_pheromone_tester.enable_tuning(elite);
+                
+                global_pheromone_tester.run_reuse_evaluate_experiment(mission_ranges_training, mission_ranges_evaluation);
+
+                std::lock_guard<std::mutex> lock(mutex);
+                if(!astar_before)
                 {
-                    std::cout << "Failed " << map_name << " with mission range " << mission_range_idx + 1 << std::endl;
-                    std::cout << e.what() << std::endl;
+                    astar_before = true;
+                    int total_conflicts = 0;
+                    int swapping_conflicts = 0;
+                    for(auto const & mission_range_evaluation : mission_ranges_evaluation)
+                    {
+                        ConflictLocations astar_conflict_data_after = conflict_locations(global_pheromone_tester.get_instance(), mission_range_evaluation, nullptr, 0.0);
+                        auto conflicts = astar_conflict_data_after.conflict_counts;
+                        total_conflicts += conflicts.vertex_conflicts + conflicts.same_direction_edge_conflicts + conflicts.opposite_direction_edge_conflicts;
+                        swapping_conflicts += conflicts.opposite_direction_edge_conflicts;
+                    }
+                    //write to file
+                    std::ofstream file("../test_files/test_data/global_pheromone_map_reuse/astar_conflicts.csv");
+                    file << total_conflicts << "," << swapping_conflicts << std::endl;
+                    file.close();
                 }
-            });
+
+            }
+            catch(std::exception& e)
+            {
+                std::cout << "Failed " << map_name << std::endl;
+                std::cout << e.what() << std::endl;
+            }
         });
     });
+
+    // std::vector<std::string> test_extensions = {"", "_dynamic_penalty"};
+
+    // std::string map_extension = ".map";
+    // std::string scenario_extension = ".scen";
+
+    // std::vector<std::string> maps = {"den312d", "warehouse-10-20-10-2-1", "ost003d"};
+    // std::vector<std::string> scenarios = {"den312d-random-1", "warehouse-10-20-10-2-1-random-1", "ost003d-random-1"};
+    // std::vector<std::pair<int, int>> mission_ranges = {{0, 29}, {30, 59}, {60, 89}, {90, 119}, {120, 149}};
+    // int repetitions = 20;
+
+    // std::vector<int> maps_indexes = {0, 1, 2};
+    // std::vector<int> mission_range_indexes = {0,1,2,3,4};
+    // std::vector<int> test_extension_range = {1};
+    // std::for_each(test_extension_range.begin(), test_extension_range.end(), [&](int t_e)
+    // {
+    //     bool elite = false;
+    //     std::string test_extension = test_extensions[t_e];
+    //     if(t_e == 1)
+    //         elite = true;
+            
+    //     std::for_each(std::execution::par, maps_indexes.begin(), maps_indexes.end(), [&](int maps_idx)
+    //     {
+    //         std::string map_name = maps[maps_idx];
+    //         std::string scenario_name = scenarios[maps_idx];
+
+    //         std::for_each(std::execution::par, mission_range_indexes.begin(), mission_range_indexes.end(), [&](int mission_range_idx)
+    //         {
+    //             try{
+    //                 GlobalPheromoneTester global_pheromone_tester;
+    //                 std::vector<int> missions(30); 
+    //                 auto mission_range = mission_ranges[mission_range_idx];
+    //                 std::iota(missions.begin(), missions.end(), mission_range.first);
+    //                 global_pheromone_tester.load_missions(missions);
+    //                 global_pheromone_tester.set_repetitions(repetitions);
+
+    //                 int file_mission_range_idx = mission_range_idx + 1;
+    //                 std::string output_file = path_prefix + "test_files/test_data/global_pheromone_map/evaluation" + test_extension + "/" + map_name + "/mission_range" + std::to_string(file_mission_range_idx) + "/";
+    //                 global_pheromone_tester.set_output_file(output_file);
+    //                 global_pheromone_tester.load_instance(path_prefix + "benchmark_data/mapf-map/" + map_name + map_extension, path_prefix + "benchmark_data/mapf-scen-random/" + scenario_name + scenario_extension);
+
+    //                 AS_Params as_params;
+    //                 as_params.elite_selection = elite;
+    //                 as_params.n_ants = 20;
+    //                 as_params.min_pheromone = 0.001;
+    //                 as_params.max_pheromone = 1;
+    //                 as_params.K = 6;
+    //                 as_params.deposit = ((as_params.max_pheromone- as_params.min_pheromone)/(double((as_params.K + (int)as_params.elite_selection)*2.)));
+    //                 as_params.alpha = 7.;
+    //                 as_params.beta = 1.;
+    //                 as_params.gamma = 4.;
+    //                 as_params.q0 = 0.0;
+    //                 as_params.tune_greedy_selection_prob = true;
+
+    //                 ACO_Params aco_params;
+    //                 aco_params.conflict_penalty = 1.0;
+    //                 aco_params.IT_NI = 100;//100;
+    //                 aco_params.IT_MAX = 1000;
+    //                 aco_params.IT_INFO = -1;
+    //                 aco_params.MAX_STEPS = 500;
+    //                 aco_params.increase_penalty = true;
+    //                 aco_params.init_pheromone = (1. - 0.001)/2.;
+
+    //                 global_pheromone_tester.set_default_as_params(as_params);
+    //                 global_pheromone_tester.set_default_aco_params(aco_params);
+
+    //                 global_pheromone_tester.enable_tuning(elite);
+                    
+    //                 global_pheromone_tester.run_basic_evaluate_experiment();
+
+    //                 cv::Mat map = create_map(global_pheromone_tester.get_instance());
+    //                 draw_missions(map, global_pheromone_tester.get_instance(), missions);
+    //                 cv::imwrite(output_file + "map_missions.png", map);
+    //             }
+    //             catch(std::exception& e)
+    //             {
+    //                 std::cout << "Failed " << map_name << " with mission range " << mission_range_idx + 1 << std::endl;
+    //                 std::cout << e.what() << std::endl;
+    //             }
+    //         });
+    //     });
+    // });
         // GlobalPheromoneTester global_pheromone_tester;
         // std::vector<int> missions(max_mission); 
         // std::iota(missions.begin(), missions.end(), 0);

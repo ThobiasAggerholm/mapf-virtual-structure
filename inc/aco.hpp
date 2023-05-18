@@ -89,6 +89,8 @@ class ACO_Params
 
         double init_pheromone = 0.5;
 
+        bool increase_penalty = false;
+
         std::vector< std::vector <Node const *>> const * dynamic_obstacles = nullptr;
         std::vector< Node const *> const * static_obstacles = nullptr;
 };
@@ -99,6 +101,8 @@ class ACO
     public:
         ACO(const Instance &instance, const ACO_Params & aco_params, AS_Params &as_params);
         void run();
+
+        
 
         ACOLog const &  get_results_log() const {return m_results_log;}
         EdgeMap const &  get_best_pheromone_map() const {return m_best_pheromones;}
@@ -126,7 +130,7 @@ class ACO
 
         void construct_solutions();
         void update_pheromones();
-        double log_best_solutions(int it, int it_ni);
+        std::tuple<int, int> log_best_solutions(int it, int it_ni);
         void update_parmeters();
 
         void request_step(ACO_Construction_State & state, std::unordered_map< int, std::pair<double, std::unordered_set < int > > > const & searching_ants);

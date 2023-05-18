@@ -252,10 +252,9 @@ void GlobalPheromoneTester::set_default_as_params(AS_Params const & params)
     default_as_params.n_vertices = instance.m_map_size;
 }
 
-void GlobalPheromoneTester::set_default_aco_params(ACO_Params const & params)
+void GlobalPheromoneTester::set_default_aco_params(ACO_Params const & params, int num_agents)
 {
     assert(instance.instance_loaded);
-    int num_agents = missions.size();
 
     default_aco_params = params;
     default_aco_params.n_agents = num_agents;
@@ -723,4 +722,154 @@ void GlobalPheromoneTester::run_basic_evaluate_experiment()
             f_aco_conflicts << std::endl;
     }
     f_aco_conflicts.close();
+}
+
+double computeMedian(std::vector<double> values) {
+    // Sort the values in ascending order
+    std::sort(values.begin(), values.end());
+
+    // Determine the size of the dataset
+    int size = values.size();
+
+    // Compute the median
+    double median;
+    if (size % 2 == 0) {
+        // Even-sized dataset
+        median = (values[size / 2 - 1] + values[size / 2]) / 2.0;
+    } else {
+        // Odd-sized dataset
+        median = values[size / 2];
+    }
+
+    return median;
+}
+
+double computeMin(std::vector<double> values) {
+    // Sort the values in ascending order
+    std::sort(values.begin(), values.end());
+
+    // Compute the median
+    double min = values[0];
+
+    return min;
+}
+
+void GlobalPheromoneTester::set_aco_missions(std::vector<int> const & missions)
+{
+    assert(instance.instance_loaded);
+    assert(missions.size() == default_aco_params.n_agents);
+
+    for(int i = 0; i < default_aco_params.n_agents; ++i)
+    {
+        int mission = missions[i];
+        assert(mission >= 0 && mission < instance.m_start_locations.size() && mission < instance.m_goal_locations.size());
+        assert(instance.m_start_locations[mission] != instance.m_goal_locations[mission]);
+        default_aco_params.goals[i] = &instance.m_my_graph[instance.m_goal_locations[mission]];
+        default_aco_params.starts[i] = &instance.m_my_graph[instance.m_start_locations[mission]];
+    }
+}
+
+//Select best mission range for training
+    //Test 20 reps for each mission range
+//Evaluate best mission range for testing
+void GlobalPheromoneTester::run_reuse_evaluate_experiment(std::vector<std::vector<int>> const & mission_ranges_training, std::vector<std::vector<int>> const & mission_ranges_evaluation)
+{
+    int training_size = mission_ranges_training.size();
+    int evaluation_size = mission_ranges_evaluation.size();
+
+    
+    double last_best_total = std::numeric_limits<double>::max();
+    double last_best_swapping = std::numeric_limits<double>::max();
+
+    //Results
+    std::vector<double> last_best_total_per_rep(repetitions, std::numeric_limits<double>::max());
+    std::vector<double> last_best_swapping_per_rep(repetitions, std::numeric_limits<double>::max());
+
+    EdgeMap best_pheromone_map_total;
+    EdgeMap best_pheromone_map_swapping;
+
+    int best_training_idx_total = 0;
+    int best_training_idx_swapping = 0;
+
+    //Get best pheromone maps
+    for(int m_idx = 0; m_idx < training_size; ++m_idx)
+    {
+        std::vector<int> training_missions = mission_ranges_training[m_idx];
+        set_aco_missions(training_missions);
+
+        EdgeMap pheromone_map_total;
+        EdgeMap pheromone_map_swapping;
+        std::vector<double> total_costs(repetitions, 0);
+        std::vector<double> swapping_costs(repetitions, 0);
+        double total_cost_best = std::numeric_limits<double>::max();
+        double swapping_cost_best = std::numeric_limits<double>::max();
+        for(int r = 0; r < repetitions; ++r)
+        {
+            //Compute ACO costs
+            ACO aco(instance, default_aco_params, default_as_params);
+            aco.run();
+            EdgeMap pheromone_map = clamp(aco.get_best_pheromone_map(), default_as_params.min_pheromone, default_as_params.max_pheromone);
+            //Compute A*+H conflict costs
+
+            double total_cost = 0;
+            double swapping_cost = 0;
+            for(int me_idx = 0; me_idx < evaluation_size; ++me_idx)
+            {
+                std::vector<int> const & missions  = mission_ranges_evaluation.at(me_idx);
+
+                ConflictLocations astar_conflict_data_after = conflict_locations(instance, missions, &pheromone_map, 1.);
+                auto conflicts = astar_conflict_data_after.conflict_counts;
+                total_cost += conflicts.vertex_conflicts + conflicts.same_direction_edge_conflicts + conflicts.opposite_direction_edge_conflicts;
+                swapping_cost += conflicts.opposite_direction_edge_conflicts;
+            }
+            total_costs[r] = total_cost;
+            swapping_costs[r] = swapping_cost;
+            if(total_cost < total_cost_best)
+            {
+                best_pheromone_map_total = pheromone_map;
+                total_cost_best = total_cost;
+            }
+            if(swapping_cost < swapping_cost_best)
+            {
+                best_pheromone_map_swapping = pheromone_map;
+                swapping_cost_best = swapping_cost;
+            }
+        }
+        //If median better than last best, update
+        double min_total = *std::min_element(total_costs.begin(), total_costs.end());
+        double min_swapping = *std::min_element(swapping_costs.begin(), swapping_costs.end());
+        if(min_total < last_best_total)
+        {
+            last_best_total = min_total;
+            best_training_idx_total = m_idx;
+            best_pheromone_map_total = pheromone_map_total;
+            last_best_total_per_rep = total_costs;
+
+        }
+        if(min_swapping < last_best_swapping)
+        {
+            last_best_swapping = min_swapping;
+            best_training_idx_swapping = m_idx;
+            best_pheromone_map_swapping = pheromone_map_swapping;
+            last_best_swapping_per_rep = swapping_costs;
+        }
+    }
+
+    //Write results
+    std::ofstream conflicts_per_rep_file(output_file + "conflicts_per_rep" + ".csv");
+    for (size_t r = 0; r < repetitions; r++)
+    {
+        conflicts_per_rep_file << last_best_total_per_rep[r] << "," << last_best_swapping_per_rep[r] << std::endl;
+    }
+    conflicts_per_rep_file.close();
+
+    best_pheromone_map_total.export_geometric(output_file + "best_pheromone_map_total" + ".csv", instance.m_num_of_cols, instance.m_num_of_rows);
+    best_pheromone_map_swapping.export_geometric(output_file + "best_pheromone_map_swapping" + ".csv", instance.m_num_of_cols, instance.m_num_of_rows);
+
+    draw_arrow_edge_map(output_file + "arrow_map_total" + ".png", instance, best_pheromone_map_total, default_as_params.max_pheromone - 0.001, 24);
+    draw_arrow_edge_map(output_file + "arrow_map_swapping" + ".png", instance, best_pheromone_map_swapping, default_as_params.max_pheromone - 0.001, 24);
+
+    std::ofstream best_training_idx_file(output_file + "best_training_idx" + ".csv");
+    best_training_idx_file << best_training_idx_total << "," << best_training_idx_swapping << std::endl;
+    best_training_idx_file.close();
 }

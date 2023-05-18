@@ -1,5 +1,6 @@
 #include "../inc/edgemap.hpp"
 #include <cassert>
+#include <fstream>
 
 EdgeMap::EdgeMap()
 {
@@ -175,3 +176,46 @@ size_t EdgeMap::size() const
     });
 }
 
+void EdgeMap::export_geometric(std::string fname, int map_width, int map_height) const
+{
+    std::vector<std::vector<std::vector<double>>> highways(map_width, std::vector<std::vector<double>>(map_height, std::vector<double>(2, 0.0)));
+
+    for(auto cit = m_edge_map.cbegin(); cit != m_edge_map.cend(); ++cit)
+    {
+        Node const* src = cit->first;
+        int x = src->get_id() % map_width;
+        int y = src->get_id() / map_width;
+        for(auto cit_inner = cit->second.cbegin(); cit_inner != cit->second.cend(); ++cit_inner)
+        {
+            Node const* dst = cit_inner->first;
+            int x_dst = dst->get_id() % map_width;
+            int y_dst = dst->get_id() / map_width;
+            if(x == x_dst) //South bound
+            {
+                if(y < y_dst)
+                {
+                    highways[x][y][0] = cit_inner->second - 0.5;
+                }
+            }
+            else if(y == y_dst)
+            {
+                if(x < x_dst)
+                {
+                    highways[x][y][1] = cit_inner->second - 0.5;
+                }
+            }
+        }
+    }
+
+    std::ofstream file(fname);
+    for(int i = 0; i < map_width; ++i)
+    {
+        for(int j = 0; j < map_height; ++j)
+        {
+            for (size_t k = 0; k < 2; k++)
+            {
+                file << i << "," << j << "," << k << "," << highways[i][j][k] << std::endl;
+            }
+        }
+    }
+}

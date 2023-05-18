@@ -26,6 +26,9 @@ class GlobalPheromoneTester
 
         void run_basic_evaluate_experiment();
 
+        void set_aco_missions(std::vector<int> const & missions);
+        void run_reuse_evaluate_experiment(std::vector<std::vector<int>> const & mission_ranges_training, std::vector<std::vector<int>> const & mission_ranges_evaluation);
+
 
         void write_output();
 
@@ -46,7 +49,7 @@ class GlobalPheromoneTester
         void set_output_file(std::string const & output_file);
 
         void set_default_as_params(AS_Params const & params);
-        void set_default_aco_params(ACO_Params const & params);
+        void set_default_aco_params(ACO_Params const & params, int num_agents = 30);
 
         Instance const & get_instance() const { return instance;}
 

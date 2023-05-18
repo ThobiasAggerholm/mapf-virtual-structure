@@ -1,5 +1,5 @@
 #include "../inc/aco.hpp"
-
+#include <cmath>
 #include "../inc/astar.hpp"
 
 #include <cassert>
@@ -202,6 +202,7 @@ void ACO::run()
     int it = 0;
 
     double best_cost = std::numeric_limits<double>::max();
+    double best_conflicts = std::numeric_limits<double>::max();
     m_results_log.reserve(m_aco_params.IT_MAX);
 
     while((it_ni < m_aco_params.IT_NI) && (it < m_aco_params.IT_MAX))
@@ -211,14 +212,17 @@ void ACO::run()
 
         construct_solutions();
         update_pheromones();
-        double new_cost = log_best_solutions(it, it_ni);
+        auto [new_cost, new_conflicts] = log_best_solutions(it, it_ni);
 
+        double best_penalized_cost = best_cost + best_conflicts * m_aco_params.conflict_penalty;
+        double new_penalized_cost = new_cost + new_conflicts * m_aco_params.conflict_penalty;
         // Show progress
-        if(new_cost < best_cost)
+        if(new_penalized_cost < best_penalized_cost)
         {
             if(m_aco_params.IT_INFO != -1)
-                std::cout << "New best score: " << new_cost << " compared to last best score: " << best_cost << std::endl;
+                std::cout << "New best score: " << new_penalized_cost << " compared to last best score: " << best_penalized_cost << std::endl;
             best_cost = new_cost;
+            best_conflicts = new_conflicts;
             m_best_pheromones = static_cast<const EdgeMap&>(m_pheromones);
             it_ni = 0;
 
@@ -519,7 +523,7 @@ int ACO::count_conflicts(std::vector<Ant const*> const & ants) const
 }
 
 
-double ACO::log_best_solutions(int it, int it_ni)
+std::tuple<int, int> ACO::log_best_solutions(int it, int it_ni)
 {
     //Log iter number
     //Compute cost
@@ -530,6 +534,7 @@ double ACO::log_best_solutions(int it, int it_ni)
     int number_of_conflicts = 0;
     double average_entropy = 0;
     double penalized_cost = 0.0;
+    int path_size_SOC = 0;
 
     //Compute entropy and makespan
     double SOC = 0.0;
@@ -550,12 +555,24 @@ double ACO::log_best_solutions(int it, int it_ni)
         double last_ant_tour_length = latest_best_ants[i_as]->get_tour_length();
         as_log.add_makespan(last_ant_tour_length);
         SOC += last_ant_tour_length;
+        path_size_SOC += latest_best_ants[i_as]->get_tour_size()-1;
     });
 
     average_entropy /= (double)m_active_as_indices.size();
 
     //compute number of conflicts
     number_of_conflicts = count_conflicts(latest_best_ants);
+    if(m_aco_params.increase_penalty)
+    {
+        if(number_of_conflicts != 0)
+        {
+            m_aco_params.conflict_penalty = std::min(m_aco_params.conflict_penalty + 0.5, 10.);
+        }
+        else
+        {
+            m_aco_params.conflict_penalty = std::max(0., m_aco_params.conflict_penalty - 0.5);
+        }
+    }
 
     //compute penalized_cost
     penalized_cost = SOC + m_aco_params.conflict_penalty * number_of_conflicts;
@@ -567,7 +584,7 @@ double ACO::log_best_solutions(int it, int it_ni)
     m_results_log.add_entropy(average_entropy);
     m_results_log.add_cost(penalized_cost);
 
-    return penalized_cost;
+    return std::make_tuple(path_size_SOC, number_of_conflicts);
 }
 
 void ACO::update_parmeters()
