@@ -230,15 +230,13 @@ int main(int argc, char** argv)
     std::vector<std::string> maps = {"den312d", "warehouse-10-20-10-2-1", "ost003d"};
     std::vector<std::string> scenarios = {"den312d-random-1", "warehouse-10-20-10-2-1-random-1", "ost003d-random-1"};
     std::vector<std::vector<int>> mission_ranges_training = generateRanges(0, 5, 30);
-    std::vector<std::vector<int>> mission_ranges_evaluation = generateRanges(150, 28, 30);
+    std::vector<std::vector<int>> mission_ranges_evaluation = generateRanges(150, 10, 30);
     std::vector<int> all_missions(999);
     std::iota(all_missions.begin(), all_missions.end(), 0);
-    int repetitions = 2;
+    int repetitions = 20;
 
-    bool astar_before = false;
-    std::mutex mutex;
 
-    std::vector<int> maps_indexes = {0, 1, 2};
+    std::vector<int> maps_indexes = {0, 1};
     std::vector<int> test_extension_range = {0, 1, 2, 3};
     std::for_each(std::execution::par, test_extension_range.begin(), test_extension_range.end(), [&](int t_e)
     {
@@ -249,9 +247,16 @@ int main(int argc, char** argv)
         if(t_e == 1)
             elite = true;
         else if(t_e == 2)
+        {
+            elite = true;
             local = true;
+        }
         else if(t_e == 3)
+        {
+            elite = true;
+            local = true;
             dynamic_penalty = true;
+        }
             
         std::for_each(std::execution::par, maps_indexes.begin(), maps_indexes.end(), [&](int maps_idx)
         {
@@ -299,24 +304,21 @@ int main(int argc, char** argv)
                 
                 global_pheromone_tester.run_reuse_evaluate_experiment(mission_ranges_training, mission_ranges_evaluation);
 
-                std::lock_guard<std::mutex> lock(mutex);
-                if(!astar_before)
+
+                int total_conflicts = 0;
+                int swapping_conflicts = 0;
+                for(auto const & mission_range_evaluation : mission_ranges_evaluation)
                 {
-                    astar_before = true;
-                    int total_conflicts = 0;
-                    int swapping_conflicts = 0;
-                    for(auto const & mission_range_evaluation : mission_ranges_evaluation)
-                    {
-                        ConflictLocations astar_conflict_data_after = conflict_locations(global_pheromone_tester.get_instance(), mission_range_evaluation, nullptr, 0.0);
-                        auto conflicts = astar_conflict_data_after.conflict_counts;
-                        total_conflicts += conflicts.vertex_conflicts + conflicts.same_direction_edge_conflicts + conflicts.opposite_direction_edge_conflicts;
-                        swapping_conflicts += conflicts.opposite_direction_edge_conflicts;
-                    }
-                    //write to file
-                    std::ofstream file("../test_files/test_data/global_pheromone_map_reuse/astar_conflicts.csv");
-                    file << total_conflicts << "," << swapping_conflicts << std::endl;
-                    file.close();
+                    ConflictLocations astar_conflict_data_after = conflict_locations(global_pheromone_tester.get_instance(), mission_range_evaluation, nullptr, 0.0);
+                    auto conflicts = astar_conflict_data_after.conflict_counts;
+                    total_conflicts += conflicts.vertex_conflicts + conflicts.same_direction_edge_conflicts + conflicts.opposite_direction_edge_conflicts;
+                    swapping_conflicts += conflicts.opposite_direction_edge_conflicts;
                 }
+                //write to file
+                std::ofstream file(output_file + "astar_conflicts.csv");
+                file << total_conflicts << "," << swapping_conflicts << std::endl;
+                file.close();
+                
 
             }
             catch(std::exception& e)

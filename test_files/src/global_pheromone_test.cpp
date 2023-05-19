@@ -826,12 +826,12 @@ void GlobalPheromoneTester::run_reuse_evaluate_experiment(std::vector<std::vecto
             swapping_costs[r] = swapping_cost;
             if(total_cost < total_cost_best)
             {
-                best_pheromone_map_total = pheromone_map;
+                pheromone_map_total = static_cast<EdgeMap const &>(pheromone_map);
                 total_cost_best = total_cost;
             }
             if(swapping_cost < swapping_cost_best)
             {
-                best_pheromone_map_swapping = pheromone_map;
+                pheromone_map_swapping = static_cast<EdgeMap const &>(pheromone_map);
                 swapping_cost_best = swapping_cost;
             }
         }
@@ -842,7 +842,7 @@ void GlobalPheromoneTester::run_reuse_evaluate_experiment(std::vector<std::vecto
         {
             last_best_total = min_total;
             best_training_idx_total = m_idx;
-            best_pheromone_map_total = pheromone_map_total;
+            best_pheromone_map_total = static_cast<EdgeMap const &>(pheromone_map_total);
             last_best_total_per_rep = total_costs;
 
         }
@@ -850,11 +850,11 @@ void GlobalPheromoneTester::run_reuse_evaluate_experiment(std::vector<std::vecto
         {
             last_best_swapping = min_swapping;
             best_training_idx_swapping = m_idx;
-            best_pheromone_map_swapping = pheromone_map_swapping;
+            best_pheromone_map_swapping = static_cast<EdgeMap const &>(pheromone_map_swapping);
             last_best_swapping_per_rep = swapping_costs;
         }
     }
-
+    assert(last_best_swapping != std::numeric_limits<double>::max());
     //Write results
     std::ofstream conflicts_per_rep_file(output_file + "conflicts_per_rep" + ".csv");
     for (size_t r = 0; r < repetitions; r++)
@@ -868,7 +868,6 @@ void GlobalPheromoneTester::run_reuse_evaluate_experiment(std::vector<std::vecto
 
     draw_arrow_edge_map(output_file + "arrow_map_total" + ".png", instance, best_pheromone_map_total, default_as_params.max_pheromone - 0.001, 24);
     draw_arrow_edge_map(output_file + "arrow_map_swapping" + ".png", instance, best_pheromone_map_swapping, default_as_params.max_pheromone - 0.001, 24);
-
     std::ofstream best_training_idx_file(output_file + "best_training_idx" + ".csv");
     best_training_idx_file << best_training_idx_total << "," << best_training_idx_swapping << std::endl;
     best_training_idx_file.close();

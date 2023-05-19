@@ -38,6 +38,8 @@ EdgeMap::~EdgeMap()
 
 EdgeMap& EdgeMap::operator=(EdgeMap &rhs)
 {
+    m_edge_map.clear();
+    m_mutex_map.clear();
     m_edge_map = std::move(rhs.m_edge_map);
     for(auto cit = m_edge_map.cbegin(); cit != m_edge_map.cend(); ++cit)
     {
@@ -51,6 +53,8 @@ EdgeMap& EdgeMap::operator=(EdgeMap &rhs)
 
 EdgeMap& EdgeMap::operator=(const EdgeMap &rhs)
 {
+    m_edge_map.clear();
+    m_mutex_map.clear();
     m_edge_map = rhs.m_edge_map;
     for(auto cit = m_edge_map.cbegin(); cit != m_edge_map.cend(); ++cit)
     {
@@ -194,14 +198,14 @@ void EdgeMap::export_geometric(std::string fname, int map_width, int map_height)
             {
                 if(y < y_dst)
                 {
-                    highways[x][y][0] = cit_inner->second - 0.5;
+                    highways[x][y][0] = cit_inner->second - (1. - 0.001)/2.;
                 }
             }
             else if(y == y_dst)
             {
                 if(x < x_dst)
                 {
-                    highways[x][y][1] = cit_inner->second - 0.5;
+                    highways[x][y][1] = cit_inner->second - (1. - 0.001)/2.;
                 }
             }
         }
